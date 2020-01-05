@@ -1,0 +1,16 @@
+{
+  "name": "electron-asar-encrypt-demo",
+  "version": "1.0.0",
+  "description": "electron-asar-encrypt-demo",
+  "main": "pack.js",
+  "scripts": {
+    "test": "node pack && test\\electron"
+  },
+  "keywords": ["asar"],
+  "author": "toyobayashi",
+  "license": "MIT",
+  "devDependencies": {
+    "asar": "^2.0.3",
+    "electron": "^7.1.7"
+  }
+}
