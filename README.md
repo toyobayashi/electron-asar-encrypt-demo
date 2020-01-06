@@ -195,9 +195,9 @@ require('./main.node')(this, exports, require, module, __filename, __dirname)
 
 总结下就是这样的：
 
-1. 入口 `index.js` （未加密）里面 require `main.node`
-2. `main.node` 里面 require `main.js` （已加密）
-3. `main.js` 里面再 require 其它模块，创建窗口等等
+1. 入口 `index.js` （未加密）里面 require `main.node` （已编译）
+2. `main.node` （已编译） 里面 require `main.js` （已加密）
+3. `main.js` （已加密）里面再 require 其它模块，创建窗口等等
 
 ## 渲染进程解密
 
@@ -207,15 +207,16 @@ require('./main.node')(this, exports, require, module, __filename, __dirname)
 
 那怎么搞？直接写成 JS 就可以了，因为渲染进程的 JS 也会被加密，不知道密钥没法解密，所以不用担心密钥泄露，把上面的 Hack `Module.prototype._compile` 的逻辑用 JS 写就行了。
 
-这里有个局限，不能在 HTML 中直接引用 `<script>` 标签加载这个 JS，因为 HTML 中的 `<script>` 不走 `Module.prototype._compile`，只能在主进程中调用 `browserWindow.webContents.executeJavaScript()` 来为每个窗口最先运行这段代码，然后再 `require` 其它 JS 文件。
+这里有个局限，不能在 HTML 中直接引用 `<script>` 标签加载这个 JS，因为 HTML 中的 `<script>` 不走 `Module.prototype._compile`，所以只能在主进程中调用 `browserWindow.webContents.executeJavaScript()` 来为每个窗口最先运行这段代码，然后再 require 其它可能需要解密的 JS 文件。
 
 ## 局限性
 
 * 只能加密 JS，不能加密其它类型的文件，如 JSON、图片资源等
 * 如果 JS 文件很多，解密造成的性能影响较大
+* 不能做成收费应用
 * 不能算绝对安全，反编译原生模块仍然有密钥泄露和加密方法被得知的风险，只是相对于单纯的 ASAR 打包来说稍微提高了一点破解的门槛，源码不是那么容易被接触。如果有人真想蹂躏你的代码，这种方法防御力可能还远远不够。
 
-最有效的方法是改 Electron 源码，重新编译 Electron。但是，重新编译 Electron 需要科学那什么，而且编译超慢。
+最有效的方法是改 Electron 源码，重新编译 Electron。但是，动源码技术门槛高，重新编译 Electron 需要科学那什么，而且编译超慢。
 
 ## 总结
 
