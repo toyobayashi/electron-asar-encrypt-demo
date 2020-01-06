@@ -1,3 +1,4 @@
+require('./asar.js')
 const { app, BrowserWindow, nativeImage } = require('electron')
 const { format } = require('url')
 const { join } = require('path')

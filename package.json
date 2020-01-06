@@ -4,13 +4,18 @@
   "description": "electron-asar-encrypt-demo",
   "main": "pack.js",
   "scripts": {
-    "test": "node pack && test\\electron"
+    "build": "node-gyp rebuild --target=7.1.7 --disturl=https://electronjs.org/headers",
+    "build:debug": "node-gyp rebuild --debug --target=7.1.7 --disturl=https://electronjs.org/headers",
+    "test": "npm run build&&node pack&&test\\electron"
   },
-  "keywords": ["asar"],
+  "keywords": [
+    "asar"
+  ],
   "author": "toyobayashi",
   "license": "MIT",
   "devDependencies": {
     "asar": "^2.0.3",
-    "electron": "^7.1.7"
+    "electron": "7.1.7",
+    "node-addon-api": "^2.0.0"
   }
 }

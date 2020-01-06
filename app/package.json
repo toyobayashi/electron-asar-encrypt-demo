@@ -1,8 +1,5 @@
 {
   "name": "electron-asar-encrypt-demo",
   "version": "1.0.0",
-  "main": "asar.js",
-  "scripts": {
-    "test": "node ../pack && ..\\test\\electron"
-  }
+  "main": "index.js"
 }

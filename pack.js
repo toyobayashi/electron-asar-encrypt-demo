@@ -4,7 +4,7 @@ const fs = require('fs')
 const asar = require('asar')
 
 asar.createPackageWithOptions(path.join(__dirname, './app'), path.join(__dirname, './test/resources/app.asar'), {
-  unpack: 'asar.js',
+  unpack: '{**/index.js,*.node}',
   transform (filename) {
     if (path.extname(filename) === '.js') {
       const hash = crypto.createHash('md5').update(fs.readFileSync(filename)).digest('hex')
