@@ -13,3 +13,7 @@ asar.createPackageWithOptions(path.join(__dirname, './app'), path.join(__dirname
     }
   }
 })
+
+asar.createPackageWithOptions(path.join(__dirname, 'node_modules_asar'), path.join(__dirname, './test/resources/node_modules.asar'), {
+  unpack: 'mod.js'
+})
