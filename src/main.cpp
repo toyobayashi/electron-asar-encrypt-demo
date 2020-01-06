@@ -32,6 +32,13 @@ Module.prototype._compile = function (content, filename) {
   return oldCompile.call(this, content, filename)
 }
 
+// try {
+//   require('entry')
+// } catch (err) {
+//   dialog.showErrorBox(err.message, err.stack)
+//   process.exit(1)
+// }
+
 */
 
 #include <napi.h>
@@ -47,6 +54,15 @@ static Napi::ObjectReference dialog;
   Napi::Function log = console.Get("log").As<Napi::Function>();
   log.Call(console, { value });
 } */
+
+static void _processExit(Napi::Env env, double code) {
+  Napi::Object process = env.Global().Get("process").As<Napi::Object>();
+  process.Get("exit").As<Napi::Function>().Call(process, { Napi::Number::New(env, code) });
+}
+
+static void _showErrorBox(Napi::Env env, const std::string& title, const std::string& message) {
+  dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog.Value(), { Napi::String::New(env, title), Napi::String::New(env, message) });
+}
 
 static Napi::Value _decrypt(Napi::Env env, Napi::Object body) {
   Napi::Object iv = body.Get("slice").As<Napi::Function>().Call(body, { Napi::Number::New(env, 0), Napi::Number::New(env, 16) }).As<Napi::Object>();
@@ -65,10 +81,8 @@ static Napi::Value _decrypt(Napi::Env env, Napi::Object body) {
   Napi::Object cipher = md5.Get("update").As<Napi::Function>().Call(md5, { code }).As<Napi::Object>();
   Napi::String _hash = cipher.Get("digest").As<Napi::Function>().Call(cipher, { Napi::String::New(env, "hex") }).As<Napi::String>();
   if (_hash.Utf8Value() != hash.Utf8Value()) {
-    dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog.Value(), { Napi::String::New(env, "Error"), Napi::String::New(env, "This program has been changed by others.") });
-    Napi::Object process = env.Global().Get("process").As<Napi::Object>();
-    process.Get("exit").As<Napi::Function>().Call(process, { Napi::Number::New(env, 1) });
-    return env.Undefined();
+    _showErrorBox(env, "Error", "This program has been changed by others.");
+    _processExit(env, 1);
   }
   return code;
 }
@@ -91,41 +105,34 @@ static Napi::Value run(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
   if (info.Length() != 6) {
-    Napi::Error::New(env, "main.run(): args.length !== 6").ThrowAsJavaScriptException();
-    return env.Undefined();
+    Napi::RangeError::New(env, "args.length !== 6").ThrowAsJavaScriptException();
   }
 
   if (!info[0].IsObject()) {
-    Napi::Error::New(env, "main.run(): typeof this !== 'object'").ThrowAsJavaScriptException();
-    return env.Undefined();
+    Napi::TypeError::New(env, "\"this\" is not an Object").ThrowAsJavaScriptException();
   }
 
   if (!info[1].IsObject()) {
-    Napi::Error::New(env, "main.run(): typeof module !== 'object'").ThrowAsJavaScriptException();
-    return env.Undefined();
+    Napi::TypeError::New(env, "\"export\" is not an Object").ThrowAsJavaScriptException();
   }
 
-  if (!info[2].IsObject()) {
-    Napi::Error::New(env, "main.run(): typeof exports !== 'object'").ThrowAsJavaScriptException();
-    return env.Undefined();
+  if (!info[2].IsFunction()) {
+    Napi::TypeError::New(env, "\"require\" is not a Function").ThrowAsJavaScriptException();
   }
 
-  if (!info[3].IsFunction()) {
-    Napi::Error::New(env, "main.run(): typeof require !== 'function'").ThrowAsJavaScriptException();
-    return env.Undefined();
+  if (!info[3].IsObject()) {
+    Napi::TypeError::New(env, "\"module\" is not an Object").ThrowAsJavaScriptException();
   }
 
   if (!info[4].IsString()) {
-    Napi::Error::New(env, "main.run(): typeof __dirname !== 'string'").ThrowAsJavaScriptException();
-    return env.Undefined();
+    Napi::TypeError::New(env, "\"__filename\" is not a string").ThrowAsJavaScriptException();
   }
 
   if (!info[5].IsString()) {
-    Napi::Error::New(env, "main.run(): typeof __filename !== 'string'").ThrowAsJavaScriptException();
-    return env.Undefined();
+    Napi::TypeError::New(env, "\"__dirname\" is not a string").ThrowAsJavaScriptException();
   }
 
-  Napi::Function require = info[3].As<Napi::Function>();
+  Napi::Function require = info[2].As<Napi::Function>();
 
   dialog = Napi::Weak(require({ Napi::String::New(env, "electron") }).As<Napi::Object>().Get("dialog").As<Napi::Object>());
   crypto = Napi::Weak(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
@@ -135,7 +142,13 @@ static Napi::Value run(const Napi::CallbackInfo& info) {
   oldCompile = Napi::Weak(ModulePrototype.Get("_compile").As<Napi::Function>());
   ModulePrototype["_compile"] = Napi::Function::New(env, ModulePrototypeOverrideCompile, "_compile");
 
-  require({ Napi::String::New(env, "./main.js") });
+  try {
+    require({ Napi::String::New(env, "./main.js") });
+  } catch (const Napi::Error& e) {
+    _showErrorBox(env, "Error", e.Get("stack").As<Napi::String>().Utf8Value());
+    _processExit(env, 1);
+  }
+
   return env.Undefined();
 }
 

@@ -4,9 +4,9 @@ const fs = require('fs')
 const asar = require('asar')
 
 asar.createPackageWithOptions(path.join(__dirname, './app'), path.join(__dirname, './test/resources/app.asar'), {
-  unpack: '{**/index.js,*.node}',
+  unpack: '*.node',
   transform (filename) {
-    if (path.extname(filename) === '.js') {
+    if (path.extname(filename) === '.js' && path.basename(filename) !== 'index.js') {
       const hash = crypto.createHash('md5').update(fs.readFileSync(filename)).digest('hex')
       const iv = Buffer.from(hash, 'hex')
       var append = false
@@ -28,4 +28,6 @@ asar.createPackageWithOptions(path.join(__dirname, './app'), path.join(__dirname
   }
 })
 
-asar.createPackageWithOptions(path.join(__dirname, 'node_modules_asar'), path.join(__dirname, './test/resources/node_modules.asar'), {})
+asar.createPackageWithOptions(path.join(__dirname, 'node_modules_asar'), path.join(__dirname, './test/resources/node_modules.asar'), {
+  unpack: '*.node'
+})
