@@ -220,3 +220,15 @@ require('./main.node')(this, exports, require, module, __filename, __dirname)
 ## 总结
 
 打包时做加密，运行时做解密，主进程放 C++ 里，渲染进程放加密的 JS 里。
+
+最后关键，不要在预加载的代码中 `console.log`，不要忘了在生产环境关掉 `devTools` 和打开 `nodeIntegration`：
+
+``` js
+new BrowserWindow({
+  // ...
+  webPreferences: {
+    nodeIntegration: true, // 渲染进程要使用 require
+    devTools: false // 关掉开发者工具，因为开发者工具可以看到渲染进程的代码
+  }
+})
+```
