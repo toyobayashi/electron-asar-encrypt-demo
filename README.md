@@ -213,11 +213,57 @@ require('./main.node')(this, exports, require, module, __filename, __dirname)
 
 * 只能加密 JS，不能加密其它类型的文件，如 JSON、图片资源等
 * 依赖 HTML `<script>` 标签的脚本动态加载方式失效，例如 Webpack 的动态导入 `import()` 导致的分包加载
-* 如果 JS 文件很多，解密造成的性能影响较大
+* 如果 JS 文件很多，解密造成的性能影响较大，下面会说如何减少需要加密的 JS。
 * 不能做成收费应用
 * 不能算绝对安全，反编译原生模块仍然有密钥泄露和加密方法被得知的风险，只是相对于单纯的 ASAR 打包来说稍微提高了一点破解的门槛，源码不是那么容易被接触。如果有人真想蹂躏你的代码，这种方法防御力可能还远远不够。
 
 最有效的方法是改 Electron 源码，重新编译 Electron。但是，动源码技术门槛高，重新编译 Electron 需要科学那什么，而且编译超慢。
+
+## 减少需要加密的 JS
+
+`node_modules` 里面的 JS 很多，且不需要加密，所以可以单独抽出来一个 `node_modules.asar`，这里面的 JS 不加密。
+
+如何让 `require` 找到 `node_modules.asar` 内部的库呢？答案同样是 Hack 掉 Node 的 API。
+
+``` js
+const path = require('path')
+const Module = require('module')
+
+const originalResolveLookupPaths = Module._resolveLookupPaths
+
+Module._resolveLookupPaths = originalResolveLookupPaths.length === 2 ? function (request, parent) {
+  // Node v12+
+  const result = originalResolveLookupPaths.call(this, request, parent)
+
+  if (!result) return result
+
+  for (let i = 0; i < result.length; i++) {
+    if (path.basename(result[i]) === 'node_modules') {
+      result.splice(i + 1, 0, result[i] + '.asar')
+      i++
+    }
+  }
+
+  return result
+} : function (request, parent, newReturn) {
+  // Node v10-
+  const result = originalResolveLookupPaths.call(this, request, parent, newReturn)
+
+  const paths = newReturn ? result : result[1]
+  for (let i = 0; i < paths.length; i++) {
+    if (path.basename(paths[i]) === 'node_modules') {
+      paths.splice(i + 1, 0, paths[i] + '.asar')
+      i++
+    }
+  }
+
+  return result
+}
+```
+
+这样把 `node_modules` 打成 `node_modules.asar` 放到 `resources` 文件夹下和 `app.asar` 同级也 OK 了。
+
+注意记得 unpack `*.node` 原生模块。
 
 ## 总结
 
