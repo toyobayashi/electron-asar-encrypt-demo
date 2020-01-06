@@ -134,12 +134,13 @@ static Napi::Value run(const Napi::CallbackInfo& info) {
   Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
   oldCompile = Napi::Weak(ModulePrototype.Get("_compile").As<Napi::Function>());
   ModulePrototype["_compile"] = Napi::Function::New(env, ModulePrototypeOverrideCompile, "_compile");
+
+  require({ Napi::String::New(env, "./main.js") });
   return env.Undefined();
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
-  exports["run"] = Napi::Function::New(env, run, "run");
-  return exports;
+  return Napi::Function::New(env, run);
 }
 
 NODE_API_MODULE(NODE_GYP_MODULE_NAME, Init)
