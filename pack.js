@@ -8,6 +8,7 @@ asar.createPackageWithOptions(path.join(__dirname, './app'), path.join(__dirname
     if (path.extname(filename) === '.js') {
       var cipher = crypto.createCipheriv('aes-256-cbc', '12345678123456781234567812345678', '1234567812345678')
       cipher.setAutoPadding(true)
+      cipher.setEncoding('base64')
       return cipher
     }
   }

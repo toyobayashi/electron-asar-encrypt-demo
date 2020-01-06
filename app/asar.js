@@ -1,33 +1,30 @@
 // TODO: Rewrite this script in C++ addon
-
-const oldReadFileSync = require('fs').readFileSync
-const path = require('path')
 const crypto = require('crypto')
-const dialog = require('electron').dialog
+const Module = require('module')
 
-const decode = (data) => {
-  var clearEncoding = 'utf8'
-  var cipherEncoding = 'binary'
-  var cipherChunks = []
-  var decipher = crypto.createDecipheriv('aes-256-cbc', '12345678123456781234567812345678', '1234567812345678')
+function decrypt (data) {
+  const clearEncoding = 'utf8'
+  const cipherEncoding = 'base64'
+  const chunks = []
+  const decipher = crypto.createDecipheriv('aes-256-cbc', '12345678123456781234567812345678', '1234567812345678')
   decipher.setAutoPadding(true)
-  cipherChunks.push(decipher.update(data, cipherEncoding, clearEncoding))
-  cipherChunks.push(decipher.final(clearEncoding))
-  return cipherChunks.join('')
+  chunks.push(decipher.update(data, cipherEncoding, clearEncoding))
+  chunks.push(decipher.final(clearEncoding))
+  return chunks.join('')
 }
 
-require('fs').readFileSync = function (...args) {
-  if (args[0].indexOf('.asar') !== -1 && path.extname(args[0]) === '.js') {
-    const data = oldReadFileSync.call(this, args[0])
-    return decode(data)
+const oldCompile = Module.prototype._compile
+
+Module.prototype._compile = function (content, filename, ...args) {
+  if (filename.indexOf('.asar') !== -1) {
+    return oldCompile.call(this, decrypt(content, 'base64'), filename, ...args)
   }
-  const data = oldReadFileSync.call(this, ...args)
-  return data
+  return oldCompile.call(this, content, filename, ...args)
 }
 
 try {
-  require(path.join(__dirname, './main.js'))
+  require('./main.js')
 } catch (err) {
-  dialog.showErrorBox(err.message, err.stack)
+  require('electron').dialog.showErrorBox(err.message, err.stack)
   process.exit(1)
 }
