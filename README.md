@@ -20,13 +20,13 @@ declare namespace asar {
       // ...
       transform? (filename: string): import('stream').Tansform | undefined;
     }
-  )
+  ): Promise<void>
 }
 
 export = asar;
 ```
 
-在第三个参数中传入 `transform` 选项，它是一个函数，返回一个转换流处理文件，返回 `undefined` 则不对文件做处理。这一步对所有的 JS 文件加密后打进 ASAR 包中，除了入口模块，原因下面会说。
+在第三个参数中传入 `transform` 选项，它是一个函数，返回一个转换流处理文件，返回 `undefined` 则不对文件做处理。这一步对所有的 JS 文件加密后打进 ASAR 包中。
 
 ``` js
 // 这个脚本不会被打包进客户端，本地开发用，不必担心密钥用明文写
@@ -42,8 +42,7 @@ asar.createPackageWithOptions(
   {
     unpack: '*.node', // C++ 模块不打包
     transform (filename) {
-      if (path.extname(filename) === '.js' &&
-          path.basename(filename) !== 'index.js') { // 入口模块不加密
+      if (path.extname(filename) === '.js') {
         // 算 JS 文件的 MD5
         const hash = crypto.createHash('md5').update(
           fs.readFileSync(filename)
@@ -84,12 +83,12 @@ asar.createPackageWithOptions(
 
 解密在客户端运行时做，因为 V8 引擎没法运行加密后的 JS，所以必须先解密后再丢给 V8 跑。这里就有讲究了，客户端代码是可以被任何人蹂躏的，所以密钥不能明着写，也不能放配置文件，所以只能下沉到 C++ 里。用 C++ 写一个原生模块实现解密，而且这个模块不能导出解密方法，否则没有意义。
 
-什么？不导出不是没法用吗？很简单，Hack 掉 Node.js 的 API，保证外部拿不到就 OK，然后直接在原生模块里面再 require 一下真正的入口 JS。以下是等价的 JS 逻辑：
+什么？不导出不是没法用吗？很简单，Hack 掉 Node.js 的 API，保证外部拿不到就 OK，然后直接把这个原生模块当作入口模块，在原生模块里面再 require 一下真正的入口 JS。以下是等价的 JS 逻辑：
 
 ``` js
 // 用 C++ 写以下逻辑，可以使密钥被编译进动态库
 // 只有反编译动态库才有可能分析出来
-const dialog = require('electron').dialog
+const { app, dialog } = require('electron')
 const crypto = require('crypto')
 const Module = require('module')
 
@@ -111,8 +110,7 @@ function decrypt (body) { // body 是 Buffer
   const code = chunks.join('')
   if (crypto.createHash('md5').update(code).digest('hex') !== hash) {
     // 如果不一样，说明肯定有问题
-    dialog.showErrorBox('error', 'This program has been changed by others.')
-    process.exit(1)
+    throw new Error('This program has been changed by others.')
   }
   // 注意：如果一样，不能说明源码没被改过，只能信他了
   return code
@@ -133,76 +131,91 @@ try {
   require('./main.js') // 主进程创建窗口在这里面
 } catch (err) {
   // 防止 Electron 报错后不退出
-  dialog.showErrorBox(err.message, err.stack)
-  process.exit(1)
+  dialog.showErrorBox('Error', err.stack)
+  app.quit()
 }
 ```
 
-这里有一个问题，C++ 里面拿不到 `require` 函数，因为 `require` 来自 JS Module 成员方法，原生模块没有 require 方法，怎么办哦？传呗，弄一个入口模块，缺什么传什么。稍微改一下上面的逻辑：
+要使用 C++ 写出上面的代码，有一个问题，如何在 C++ 里拿到 JS 的 `require` 函数呢？
+
+看下 Node 源码就知道，调用 `require` 就是相当于调用 `Module.prototype.require`，所以只要能拿到 `module` 对象，也就能够拿到 `require` 函数。不幸的是，NAPI 没有在模块初始化的回调中暴露 `module` 对象，有人提了 PR 但是官方似乎考虑到某些原因并不想暴露 `module`，只暴露了 `exports` 对象，不像 Node CommonJS 模块中 JS 代码被一层函数包裹：
 
 ``` js
-// 这是 C++
-// 编译成 main.node
-// 把上面的等价 JS 代码包一层
-module.exports = function (thisArg, exports, require, module, __filename, __dirname) {
-  // 上面的代码在这里面
+function (exports, require, module, __filename, __dirname) {
+  // 自己写的代码在这里
 }
 ```
+
+有个办法，就是把 C++ 编译后的 `.node` 原生模块当作入口执行，这样一来 `global.process.mainModule` 就是这个原生模块的 `module` 对象。这个做法正好符合我们的需求，我们本来就要把原生模块当作入口执行。
 
 对应 `node-addon-api` 的写法：
 
 ``` cpp
 #include <napi.h>
+#include <unordered_map>
 
-// 必须要引用，因为 C++ 函数执行完以后所有局部变量栈内存会被回收
-// 这样才能在其它回调函数中调用 crypto 库
-static Napi::ObjectReference crypto; 
+typedef struct AddonData {
+  // 存 Node 模块引用
+  std::unordered_map<std::string, Napi::ObjectReference> modules;
+  // 存函数引用
+  std::unordered_map<std::string, Napi::FunctionReference> functions;
+} AddonData;
 
-static Napi::Value run(const Napi::CallbackInfo& info) {
-  // 判断参数类型
-  // ...
-  Napi::Env env = info.Env();
-
-  Napi::Function require = info[2].As<Napi::Function>();
-
-  // 调用
-
-  // ...
-  crypto = Napi::Weak(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
-  // ...
-  try {
-    require({ Napi::String::New(env, "./main.js") });
-  } catch (const Napi::Error& err) {
-    // 弹窗后退出
-  }
+static void _deleteAddonData(napi_env env, void* data, void* hint) {
+  // 释放堆内存
+  delete static_cast<AddonData*>(data);
 }
 
-Napi::Object Init(Napi::Env env, Napi::Object exports) {
-  return Napi::Function::New(env, run);
+static Napi::Value modulePrototypeCompile(const Napi::CallbackInfo& info) {
+  AddonData* addonData = static_cast<AddonData*>(info.Data());
+  Napi::Function oldCompile = addonData->functions["Module.prototype._compile"].Value();
+  // ...
+}
+
+static Napi::Object _init(Napi::Env env, Napi::Object exports) {
+  Napi::Object process = env.Global().Get("process").As<Napi::Object>();
+  Napi::Object module = process.Get("mainModule").As<Napi::Object>();
+  Napi::Function require = module.Get("require").As<Napi::Function>();
+
+  AddonData* addonData = new AddonData;
+  // 把 addonData 和 exports 对象关联
+  // exports 被垃圾回收时释放 addonData 指向的内存
+  NAPI_THROW_IF_FAILED(env,
+    napi_wrap(env, exports, addonData, _deleteAddonData, nullptr, nullptr),
+    exports);
+
+  // const electron = require('electron')
+  Napi::Object electron = require.Call(module, { Napi::String::New(env, "electron") }).As<Napi::Object>();
+  // require('crypto')
+  addonData->modules["crypto"] = Napi::Persistent(require.Call(module, { Napi::String::New(env, "crypto") }).As<Napi::Object>());
+  // require('module')
+  Napi::Object Module = require.Call(module, { Napi::String::New(env, "module") }).As<Napi::Object>();
+
+  Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
+  addonData->functions["Module.prototype._compile"] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
+  ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
+
+  try {
+    require.Call(module, { Napi::String::New(env, "./main.js") });
+  } catch (const Napi::Error& e) {
+    // 弹窗后退出
+    // ...
+  }
+  return exports;
 }
 
 // 不要分号，NODE_API_MODULE 是个宏
-NODE_API_MODULE(NODE_GYP_MODULE_NAME, Init)
+NODE_API_MODULE(NODE_GYP_MODULE_NAME, _init)
 ```
-
-再来个入口文件 `index.js`：
-
-``` js
-// 这是真的 JS
-require('./main.node')(this, exports, require, module, __filename, __dirname)
-```
-
-还记不记得上面说到 `index.js` 不要加密？因为这里必须最先跑，才能 Hack 掉 Node 的 API，实现解密操作，如果这里加密了，那连入口都跑不了。
 
 总结下就是这样的：
 
-1. 入口 `index.js` （未加密）里面 require `main.node` （已编译）
-2. `main.node` （已编译） 里面 require `main.js` （已加密）
-3. `main.js` （已加密）里面再 require 其它模块，创建窗口等等
+1. `main.node` （已编译） 里面 require `main.js` （已加密）
+2. `main.js` （已加密）里面再 require 其它模块，创建窗口等等
 
 ## 渲染进程解密
 
-为什么渲染进程不能和主进程一样 require `main.node` ？
+为什么渲染进程不能和主进程一样执行 `main.node` ？
 
 因为渲染进程可能有很多个，就是说可能有很多个窗口，但是原生模块是不能被 Electron 渲染进程中的 Node 重复加载的，这个问题在 Electron 官方仓库有讨论，不建议在渲染进程加载原生模块。
 
