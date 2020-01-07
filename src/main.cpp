@@ -50,16 +50,16 @@ typedef struct AddonData {
   std::unordered_map<std::string, Napi::FunctionReference> functions;
 } AddonData;
 
-static void _log(Napi::Env env, Napi::Value value) {
+/* static void _log(Napi::Env env, Napi::Value value) {
   Napi::Object console = env.Global().As<Napi::Object>().Get("console").As<Napi::Object>();
   Napi::Function log = console.Get("log").As<Napi::Function>();
   log.Call(console, { value });
-}
+} */
 
 static void _deleteAddonData(napi_env env, void* data, void* hint) {
   (void) env;
   (void) hint;
-  _log(env, Napi::String::New(env, "delete"));
+  // _log(env, Napi::String::New(env, "delete"));
   delete static_cast<AddonData*>(data);
 }
 
