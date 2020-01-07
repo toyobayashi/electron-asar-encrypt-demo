@@ -17,8 +17,7 @@ function decrypt (body) {
   chunks.push(decipher.final(clearEncoding))
   const code = chunks.join('')
   if (crypto.createHash('md5').update(code).digest('hex') !== hash) {
-    dialog.showErrorBox('Error', 'This program has been changed by others.')
-    app.quit()
+    throw new Error('This program has been changed by others.')
   }
   return code
 }
@@ -32,12 +31,12 @@ Module.prototype._compile = function (content, filename) {
   return oldCompile.call(this, content, filename)
 }
 
-// try {
-//   require('./main.js')
-// } catch (err) {
-//   dialog.showErrorBox(err.message, err.stack)
-//   app.quit()
-// }
+try {
+  require('./main.js')
+} catch (err) {
+  dialog.showErrorBox('Error', err.stack)
+  app.quit()
+}
 
 */
 
@@ -51,32 +50,17 @@ typedef struct AddonData {
   std::unordered_map<std::string, Napi::FunctionReference> functions;
 } AddonData;
 
-/* static void _log(Napi::Env env, Napi::Value value) {
+static void _log(Napi::Env env, Napi::Value value) {
   Napi::Object console = env.Global().As<Napi::Object>().Get("console").As<Napi::Object>();
   Napi::Function log = console.Get("log").As<Napi::Function>();
   log.Call(console, { value });
-} */
+}
 
 static void _deleteAddonData(napi_env env, void* data, void* hint) {
   (void) env;
   (void) hint;
-  // _log(env, Napi::String::New(env, "delete"));
+  _log(env, Napi::String::New(env, "delete"));
   delete static_cast<AddonData*>(data);
-}
-
-static void _appQuit(Napi::Env env, AddonData* addonData) {
-  Napi::Object electron = addonData->modules["electron"].Value();
-  Napi::Object app = electron.Get("app").As<Napi::Object>();
-  Napi::Function quit = app.Get("quit").As<Napi::Function>();
-  quit.Call(app, {});
-  // Napi::Object process = env.Global().Get("process").As<Napi::Object>();
-  // process.Get("exit").As<Napi::Function>().Call(process, { Napi::Number::New(env, 1) });
-}
-
-static void _showErrorBox(Napi::Env env, const std::string& title, const std::string& message, AddonData* addonData) {
-  Napi::Object electron = addonData->modules["electron"].Value();
-  Napi::Object dialog = electron.Get("dialog").As<Napi::Object>();
-  dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog, { Napi::String::New(env, title), Napi::String::New(env, message) });
 }
 
 static Napi::Value _decrypt(Napi::Env env, Napi::Object body, AddonData* addonData) {
@@ -97,8 +81,7 @@ static Napi::Value _decrypt(Napi::Env env, Napi::Object body, AddonData* addonDa
   Napi::Object cipher = md5.Get("update").As<Napi::Function>().Call(md5, { code }).As<Napi::Object>();
   Napi::String _hash = cipher.Get("digest").As<Napi::Function>().Call(cipher, { Napi::String::New(env, "hex") }).As<Napi::String>();
   if (_hash.Utf8Value() != hash.Utf8Value()) {
-    _showErrorBox(env, "Error", "This program has been changed by others.", addonData);
-    _appQuit(env, addonData);
+    throw Napi::Error::New(env, "This program has been changed by others.");
   }
   return code;
 }
@@ -119,51 +102,36 @@ static Napi::Value modulePrototypeCompile(const Napi::CallbackInfo& info) {
   return oldCompile.Call(info.This(), { content, filename });
 }
 
-static Napi::Value entry(const Napi::CallbackInfo& info) {
-  static bool hacked = false;
-  Napi::Env env = info.Env();
-
-  if (info.Length() != 1) {
-    Napi::RangeError::New(env, "args.length !== 1").ThrowAsJavaScriptException();
-  }
-
-  if (!info[0].IsObject()) {
-    Napi::TypeError::New(env, "\"module\" is not an Object").ThrowAsJavaScriptException();
-  }
-
-  Napi::Object module = info[0].As<Napi::Object>();
+static Napi::Object _init(Napi::Env env, Napi::Object exports) {
+  Napi::Object process = env.Global().Get("process").As<Napi::Object>();
+  Napi::Object module = process.Get("mainModule").As<Napi::Object>();
   Napi::Function require = module.Get("require").As<Napi::Function>();
 
-  AddonData* addonData = static_cast<AddonData*>(info.Data());
+  AddonData* addonData = new AddonData;
+  NAPI_THROW_IF_FAILED(env,
+    napi_wrap(env, exports, addonData, _deleteAddonData, nullptr, nullptr),
+    exports);
 
-  if (!hacked) {
-    addonData->modules["electron"] = Napi::Persistent(require.Call(module, { Napi::String::New(env, "electron") }).As<Napi::Object>());
-    addonData->modules["crypto"] = Napi::Persistent(require.Call(module, { Napi::String::New(env, "crypto") }).As<Napi::Object>());
+  Napi::Object electron = require.Call(module, { Napi::String::New(env, "electron") }).As<Napi::Object>();
+  addonData->modules["crypto"] = Napi::Persistent(require.Call(module, { Napi::String::New(env, "crypto") }).As<Napi::Object>());
 
-    Napi::Object Module = require.Call(module, { Napi::String::New(env, "module") }).As<Napi::Object>();
+  Napi::Object Module = require.Call(module, { Napi::String::New(env, "module") }).As<Napi::Object>();
 
-    Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
-    addonData->functions["Module.prototype._compile"] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
-    ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
-    hacked = true;
-  }
+  Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
+  addonData->functions["Module.prototype._compile"] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
+  ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
 
   try {
     require.Call(module, { Napi::String::New(env, "./main.js") });
   } catch (const Napi::Error& e) {
-    _showErrorBox(env, "Error", e.Get("stack").As<Napi::String>().Utf8Value(), addonData);
-    _appQuit(env, addonData);
-  }
-  return env.Undefined();
-}
+    Napi::Object dialog = electron.Get("dialog").As<Napi::Object>();
+    dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog, { Napi::String::New(env, "Error"), e.Get("stack").As<Napi::String>() });
 
-static Napi::Object _init(Napi::Env env, Napi::Object exports) {
-  AddonData* addonData = new AddonData;
-  Napi::Function moduleExports = Napi::Function::New(env, entry, nullptr, addonData);
-  NAPI_THROW_IF_FAILED(env,
-    napi_wrap(env, moduleExports, addonData, _deleteAddonData, nullptr, nullptr),
-    moduleExports);
-  return moduleExports;
+    Napi::Object app = electron.Get("app").As<Napi::Object>();
+    Napi::Function quit = app.Get("quit").As<Napi::Function>();
+    quit.Call(app, {});
+  }
+  return exports;
 }
 
 NODE_API_MODULE(NODE_GYP_MODULE_NAME, _init)

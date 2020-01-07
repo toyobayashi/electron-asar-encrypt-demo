@@ -80,7 +80,6 @@ class WindowManager {
         return oldCompile.call(this, content, filename)
       }
 
-      console.log('Hacked.')
       require('./asar.js')
       require('${entry}')
     }()`)
