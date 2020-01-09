@@ -102,27 +102,101 @@ static Napi::Value modulePrototypeCompile(const Napi::CallbackInfo& info) {
   return oldCompile.Call(info.This(), { content, filename });
 }
 
+static Napi::Value _runScript(Napi::Env env, Napi::String script) {
+  napi_value res;
+  NAPI_THROW_IF_FAILED(env, napi_run_script(env, script, &res), env.Undefined());
+  return Napi::Value(env, res);
+}
+
+static Napi::Value _runScript(Napi::Env env, const std::string& script) {
+  return _runScript(env, Napi::String::New(env, script));
+}
+
+static Napi::Value _runScript(Napi::Env env, const char* script) {
+  return _runScript(env, Napi::String::New(env, script));
+}
+
+static Napi::Function _makeRequireFunction(Napi::Env env, Napi::Object module) {
+  std::string script = "(function makeRequireFunction(mod) {\n"
+      "const Module = mod.constructor;\n"
+
+      "function validateString (value, name) { if (typeof value !== 'string') throw new TypeError('The \"' + name + '\" argument must be of type string. Received type ' + typeof value); }\n"
+
+      "const require = function require(path) {\n"
+      "  return mod.require(path);\n"
+      "};\n"
+
+      "function resolve(request, options) {\n"
+        "validateString(request, 'request');\n"
+        "return Module._resolveFilename(request, mod, false, options);\n"
+      "}\n"
+
+      "require.resolve = resolve;\n"
+
+      "function paths(request) {\n"
+        "validateString(request, 'request');\n"
+        "return Module._resolveLookupPaths(request, mod);\n"
+      "}\n"
+
+      "resolve.paths = paths;\n"
+
+      "require.main = process.mainModule;\n"
+
+      "require.extensions = Module._extensions;\n"
+
+      "require.cache = Module._cache;\n"
+
+      "return require;\n"
+    "});";
+
+  Napi::Function _makeRequire = _runScript(env, script).As<Napi::Function>();
+  return _makeRequire({ module }).As<Napi::Function>();
+}
+
+static Napi::Value _getModuleObject(Napi::Env env, Napi::Object exports) {
+  std::string findModuleScript = "(function (exports) {\n"
+    "function findModule(start, target) {\n"
+    "  if (start.exports === target) {\n"
+    "    return start;\n"
+    "  }\n"
+    "  for (var i = 0; i < start.children.length; i++) {\n"
+    "    var res = findModule(start.children[i], target);\n"
+    "    if (res) {\n"
+    "      return res;\n"
+    "    }\n"
+    "  }\n"
+    "  return null;\n"
+    "}\n"
+    "return findModule(process.mainModule, exports);\n"
+    "});";
+  Napi::Function _findFunction = _runScript(env, findModuleScript).As<Napi::Function>();
+  Napi::Value res = _findFunction({ exports });
+  if (res.IsNull()) {
+    Napi::Error::New(env, "Cannot find module object.").ThrowAsJavaScriptException();
+  }
+  return res;
+}
+
 static Napi::Object _init(Napi::Env env, Napi::Object exports) {
-  Napi::Object process = env.Global().Get("process").As<Napi::Object>();
-  Napi::Object module = process.Get("mainModule").As<Napi::Object>();
-  Napi::Function require = module.Get("require").As<Napi::Function>();
+  Napi::Object module = _getModuleObject(env, exports).As<Napi::Object>();
+  Napi::Function require = _makeRequireFunction(env, module);
 
   AddonData* addonData = new AddonData;
   NAPI_THROW_IF_FAILED(env,
     napi_wrap(env, exports, addonData, _deleteAddonData, nullptr, nullptr),
     exports);
 
-  Napi::Object electron = require.Call(module, { Napi::String::New(env, "electron") }).As<Napi::Object>();
-  addonData->modules["crypto"] = Napi::Persistent(require.Call(module, { Napi::String::New(env, "crypto") }).As<Napi::Object>());
+  Napi::Object electron = require({ Napi::String::New(env, "electron") }).As<Napi::Object>();
+  addonData->modules["crypto"] = Napi::Persistent(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
 
-  Napi::Object Module = require.Call(module, { Napi::String::New(env, "module") }).As<Napi::Object>();
+  Napi::Object Module = require({ Napi::String::New(env, "module") }).As<Napi::Object>();
 
   Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
   addonData->functions["Module.prototype._compile"] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
   ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
 
   try {
-    require.Call(module, { Napi::String::New(env, "./main.js") });
+    require({ Napi::String::New(env, "./main.js") });
   } catch (const Napi::Error& e) {
     Napi::Object dialog = electron.Get("dialog").As<Napi::Object>();
     dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog, { Napi::String::New(env, "Error"), e.Get("stack").As<Napi::String>() });
