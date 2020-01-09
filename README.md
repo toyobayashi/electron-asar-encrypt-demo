@@ -146,12 +146,95 @@ function (exports, require, module, __filename, __dirname) {
 }
 ```
 
-有个办法，就是把 C++ 编译后的 `.node` 原生模块当作入口执行，这样一来 `global.process.mainModule` 就是这个原生模块的 `module` 对象。这个做法正好符合我们的需求，我们本来就要把原生模块当作入口执行。
+仔细翻阅 Node.js 文档，可以在 process 章节里看到有 `global.process.mainModule` 这么个东西，也就是说入口模块是可以从全局拿到的，只要遍历模块的 `children` 数组往下找，对比 `module.exports` 等不等于 `exports`，就可以找到当前原生模块的 `module` 对象。
 
-对应 `node-addon-api` 的写法：
+先封装一下运行脚本的方法。
 
 ``` cpp
+#include <string>
 #include <napi.h>
+
+// 先封装一下脚本运行方法
+static Napi::Value _runScript(Napi::Env env, Napi::String script) {
+  napi_value res;
+  NAPI_THROW_IF_FAILED(env, napi_run_script(env, script, &res), env.Undefined());
+  return Napi::Value(env, res);
+}
+
+static Napi::Value _runScript(Napi::Env env, const std::string& script) {
+  return _runScript(env, Napi::String::New(env, script));
+}
+
+static Napi::Value _runScript(Napi::Env env, const char* script) {
+  return _runScript(env, Napi::String::New(env, script));
+}
+```
+
+然后就可以愉快地 JS in C++ 了。
+
+``` cpp
+static Napi::Value _getModuleObject(Napi::Env env, Napi::Object exports) {
+  std::string findModuleScript = "(function (exports) {\n"
+    "function findModule(start, target) {\n"
+    "  if (start.exports === target) {\n"
+    "    return start;\n"
+    "  }\n"
+    "  for (var i = 0; i < start.children.length; i++) {\n"
+    "    var res = findModule(start.children[i], target);\n"
+    "    if (res) {\n"
+    "      return res;\n"
+    "    }\n"
+    "  }\n"
+    "  return null;\n"
+    "}\n"
+    "return findModule(process.mainModule, exports);\n"
+    "});";
+  Napi::Function _findFunction = _runScript(env, findModuleScript).As<Napi::Function>();
+  Napi::Value res = _findFunction({ exports });
+  if (res.IsNull()) {
+    Napi::Error::New(env, "Cannot find module object.").ThrowAsJavaScriptException();
+  }
+  return res;
+}
+static Napi::Function _makeRequireFunction(Napi::Env env, Napi::Object module) {
+  std::string script = "(function makeRequireFunction(mod) {\n"
+      "const Module = mod.constructor;\n"
+
+      "function validateString (value, name) { if (typeof value !== 'string') throw new TypeError('The \"' + name + '\" argument must be of type string. Received type ' + typeof value); }\n"
+
+      "const require = function require(path) {\n"
+      "  return mod.require(path);\n"
+      "};\n"
+
+      "function resolve(request, options) {\n"
+        "validateString(request, 'request');\n"
+        "return Module._resolveFilename(request, mod, false, options);\n"
+      "}\n"
+
+      "require.resolve = resolve;\n"
+
+      "function paths(request) {\n"
+        "validateString(request, 'request');\n"
+        "return Module._resolveLookupPaths(request, mod);\n"
+      "}\n"
+
+      "resolve.paths = paths;\n"
+
+      "require.main = process.mainModule;\n"
+
+      "require.extensions = Module._extensions;\n"
+
+      "require.cache = Module._cache;\n"
+
+      "return require;\n"
+    "});";
+
+  Napi::Function _makeRequire = _runScript(env, script).As<Napi::Function>();
+  return _makeRequire({ module }).As<Napi::Function>();
+}
+```
+
+``` cpp
 #include <unordered_map>
 
 typedef struct AddonData {
@@ -173,9 +256,8 @@ static Napi::Value modulePrototypeCompile(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Object _init(Napi::Env env, Napi::Object exports) {
-  Napi::Object process = env.Global().Get("process").As<Napi::Object>();
-  Napi::Object module = process.Get("mainModule").As<Napi::Object>();
-  Napi::Function require = module.Get("require").As<Napi::Function>();
+  Napi::Object module = _getModuleObject(env, exports).As<Napi::Object>();
+  Napi::Function require = _makeRequireFunction(env, module);
 
   AddonData* addonData = new AddonData;
   // 把 addonData 和 exports 对象关联
@@ -185,18 +267,18 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
     exports);
 
   // const electron = require('electron')
-  Napi::Object electron = require.Call(module, { Napi::String::New(env, "electron") }).As<Napi::Object>();
+  Napi::Object electron = require({ Napi::String::New(env, "electron") }).As<Napi::Object>();
   // require('crypto')
-  addonData->modules["crypto"] = Napi::Persistent(require.Call(module, { Napi::String::New(env, "crypto") }).As<Napi::Object>());
+  addonData->modules["crypto"] = Napi::Persistent(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
   // require('module')
-  Napi::Object Module = require.Call(module, { Napi::String::New(env, "module") }).As<Napi::Object>();
+  Napi::Object Module = require({ Napi::String::New(env, "module") }).As<Napi::Object>();
 
   Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
   addonData->functions["Module.prototype._compile"] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
   ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
 
   try {
-    require.Call(module, { Napi::String::New(env, "./main.js") });
+    require({ Napi::String::New(env, "./main.js") });
   } catch (const Napi::Error& e) {
     // 弹窗后退出
     // ...
@@ -207,6 +289,8 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
 // 不要分号，NODE_API_MODULE 是个宏
 NODE_API_MODULE(NODE_GYP_MODULE_NAME, _init)
 ```
+
+看到这里可能会问了搞了大半天为什么还要用 C++ 来写 JS 啊，不是明明可以 `_runScript()` 吗？我的想法是解密部分不直接写成 JS 字符串可以加大反编译后的代码的阅读难度，虽然不知道实际上是不是。
 
 总结下就是这样的：
 
@@ -228,6 +312,7 @@ NODE_API_MODULE(NODE_GYP_MODULE_NAME, _init)
 * 只能加密 JS，不能加密其它类型的文件，如 JSON、图片资源等
 * 所有不走 `Module.prototype._compile` 的 JS 加载方法都不能加载加密后的 JS，例如依赖 HTML `<script>` 标签的脚本加载方式失效，Webpack 动态导入 `import()` 失效
 * 如果 JS 文件很多，解密造成的性能影响较大，下面会说如何减少需要加密的 JS
+* 不能使用纯 JS 实现，必须要 C++ 编译关键的密钥和解密方法
 * 不能做成收费应用
 * 不能算绝对安全，反编译原生模块仍然有密钥泄露和加密方法被得知的风险，只是相对于单纯的 ASAR 打包来说稍微提高了一点破解的门槛，源码不是那么容易被接触。如果有人真想蹂躏你的代码，这种方法防御力可能还远远不够
 
