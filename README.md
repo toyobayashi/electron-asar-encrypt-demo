@@ -11,6 +11,8 @@
 打包时做加密，利用 `asar` 库的 `asar.createPackageWithOptions()` 这个 API。（官方没有提供 `.d.ts` 有点烦，这里随便写一下
 
 ``` ts
+/// <reference types="node" />
+
 declare namespace asar {
   // ...
   export function createPackageWithOptions(
@@ -18,7 +20,7 @@ declare namespace asar {
     dest: string,
     options: {
       // ...
-      transform? (filename: string): import('stream').Tansform | undefined;
+      transform? <T extends NodeJS.WritableStream>(filename: string): T;
     }
   ): Promise<void>
 }
