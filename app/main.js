@@ -1,8 +1,14 @@
 require('./asar.js')
-const { app, BrowserWindow, nativeImage } = require('electron')
+const { app, BrowserWindow, nativeImage, ipcMain } = require('electron')
 const { format } = require('url')
 const { join } = require('path')
 const { existsSync } = require('fs')
+
+for (let i = 0; i < process.argv.length; i++) {
+  if (process.argv[i].indexOf('--inspect') !== -1 || process.argv[i].indexOf('--remote-debugging-port') !== -1) {
+    throw new Error('Not allow debugging this program.')
+  }
+}
 
 console.log(require('outerpkg'))
 
@@ -46,28 +52,20 @@ class WindowManager {
       const crypto = require('crypto')
       const Module = require('module')
       const dialog = require('electron').remote.dialog
-      
+
+      const key = Buffer.from([${WindowManager.__SECRET_KEY__.join(',')}])
+
       function decrypt (body) {
         const iv = body.slice(0, 16)
-        const hash = iv.toString('hex')
         const data = body.slice(16)
         const clearEncoding = 'utf8'
         const cipherEncoding = 'binary'
         const chunks = []
-        const decipher = crypto.createDecipheriv('aes-256-cbc', '0123456789abcdef0123456789abcdef', iv)
+        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
         decipher.setAutoPadding(true)
         chunks.push(decipher.update(data, cipherEncoding, clearEncoding))
         chunks.push(decipher.final(clearEncoding))
         const code = chunks.join('')
-        if (crypto.createHash('md5').update(code).digest('hex') !== hash) {
-          dialog.showMessageBoxSync({
-            type: 'error',
-            buttons: ['OK'],
-            title: 'Error',
-            message: 'This program has been changed by others.'
-          })
-          window.close()
-        }
         return code
       }
       
@@ -98,9 +96,7 @@ class WindowManager {
 
     this.windows.set(name, win)
 
-    if (process.env.NODE_ENV === 'production') {
-      win.removeMenu ? win.removeMenu() : win.setMenu(null)
-    }
+    win.removeMenu ? win.removeMenu() : win.setMenu(null)
 
     const res = win.loadURL(url)
 
@@ -139,6 +135,8 @@ WindowManager.getInstance = function () {
 
 WindowManager.ID_MAIN_WINDOW = 'main-window'
 
+WindowManager.__SECRET_KEY__ = []
+
 WindowManager.createMainWindow = function () {
   const windowManager = WindowManager.getInstance()
   if (!windowManager.hasWindow(WindowManager.ID_MAIN_WINDOW)) {
@@ -148,14 +146,14 @@ WindowManager.createMainWindow = function () {
       show: false,
       webPreferences: {
         nodeIntegration: true,
-        devTools: true
+        devTools: false
       }
     }
 
     windowManager.createWindow(
       WindowManager.ID_MAIN_WINDOW,
       browerWindowOptions,
-      /* process.env.NODE_ENV !== 'production' ? 'http://{{host}}:{{port}}{{publicPath}}' :  */format({
+      format({
         pathname: join(__dirname, './index.html'),
         protocol: 'file:',
         slashes: true
@@ -175,8 +173,55 @@ app.on('activate', function () {
   WindowManager.createMainWindow()
 })
 
-typeof app.whenReady === 'function' ? app.whenReady().then(main).catch(err => console.log(err)) : app.on('ready', main)
+function mustNotExportKey (key) {
+  // ipcMain.on('getkey', (e) => {
+  //   e.returnValue = []
+  // })
+  ipcMain.on('check', (e, arr) => {
+    if (arr.length !== key.length) {
+      e.returnValue = {
+        err: null,
+        data: false
+      }
+      return
+    }
+    for (let i = 0; i < key.length; i++) {
+      try {
+        if (key[i] !== arr[i]) {
+          e.returnValue = {
+            err: null,
+            data: false
+          }
+          return
+        }
+      } catch (e) {
+        e.returnValue = {
+          err: e.message,
+          data: false
+        }
+        return
+      }
+    }
+    e.returnValue = {
+      err: null,
+      data: true
+    }
+  })
+}
 
 function main () {
   WindowManager.createMainWindow()
+}
+
+module.exports = function bootstrap (k) {
+  if (!Array.isArray(k) || k.length === 0) {
+    throw new Error('Failed to bootstrap application.')
+  }
+  WindowManager.__SECRET_KEY__ = k
+  mustNotExportKey(k)
+  if (app.whenReady === 'function') {
+    app.whenReady().then(main).catch(err => console.log(err))
+  } else {
+    app.on('ready', main)
+  }
 }

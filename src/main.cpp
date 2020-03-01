@@ -4,21 +4,21 @@ const { app, dialog } = require('electron')
 const crypto = require('crypto')
 const Module = require('module')
 
+function getKey () {
+  return KEY
+}
+
 function decrypt (body) {
   const iv = body.slice(0, 16)
-  const hash = iv.toString('hex')
   const data = body.slice(16)
   const clearEncoding = 'utf8'
   const cipherEncoding = 'binary'
   const chunks = []
-  const decipher = crypto.createDecipheriv('aes-256-cbc', '0123456789abcdef0123456789abcdef', iv)
+  const decipher = crypto.createDecipheriv('aes-256-cbc', getKey(), iv)
   decipher.setAutoPadding(true)
   chunks.push(decipher.update(data, cipherEncoding, clearEncoding))
   chunks.push(decipher.final(clearEncoding))
   const code = chunks.join('')
-  if (crypto.createHash('md5').update(code).digest('hex') !== hash) {
-    throw new Error('This program has been changed by others.')
-  }
   return code
 }
 
@@ -32,7 +32,7 @@ Module.prototype._compile = function (content, filename) {
 }
 
 try {
-  require('./main.js')
+  require('./main.js')(getKey())
 } catch (err) {
   dialog.showErrorBox('Error', err.stack)
   app.quit()
@@ -42,8 +42,6 @@ try {
 
 #include <napi.h>
 #include <unordered_map>
-
-#define SECRET_KEY ("0123456789abcdef0123456789abcdef")
 
 typedef struct AddonData {
   std::unordered_map<std::string, Napi::ObjectReference> modules;
@@ -56,6 +54,21 @@ typedef struct AddonData {
   log.Call(console, { value });
 } */
 
+static const char errmsg[] = "This program has been changed by others.";
+
+#define KEY_LENGTH 32
+
+static Napi::Array _getKey(napi_env env) {
+  const unsigned char key[KEY_LENGTH] = {
+#include "key.txt"
+  };
+  Napi::Array arrkey = Napi::Array::New(env, KEY_LENGTH);
+  for (uint32_t i = 0; i < KEY_LENGTH; i++) {
+    arrkey.Set(i, key[i]);
+  }
+  return arrkey;
+}
+
 static void _deleteAddonData(napi_env env, void* data, void* hint) {
   (void) env;
   (void) hint;
@@ -65,24 +78,23 @@ static void _deleteAddonData(napi_env env, void* data, void* hint) {
 
 static Napi::Value _decrypt(Napi::Env env, Napi::Object body, AddonData* addonData) {
   Napi::Object iv = body.Get("slice").As<Napi::Function>().Call(body, { Napi::Number::New(env, 0), Napi::Number::New(env, 16) }).As<Napi::Object>();
-  Napi::String hash = iv.Get("toString").As<Napi::Function>().Call(iv, { Napi::String::New(env, "hex") }).As<Napi::String>();
   Napi::Object data = body.Get("slice").As<Napi::Function>().Call(body, { Napi::Number::New(env, 16) }).As<Napi::Object>();
   Napi::String clearEncoding = Napi::String::New(env, "utf8");
   Napi::String cipherEncoding = Napi::String::New(env, "binary");
   Napi::Array chunks = Napi::Array::New(env);
   Napi::Object crypto = addonData->modules["crypto"].Value();
-  Napi::Object decipher = crypto.Get("createDecipheriv").As<Napi::Function>().Call(crypto, { Napi::String::New(env, "aes-256-cbc"), Napi::String::New(env, SECRET_KEY), iv }).As<Napi::Object>();
+
+  const char algorithm[12] = { 0x61, 0x65, 0x73, 0x2d, 0x32, 0x35, 0x36, 0x2d, 0x63, 0x62, 0x63 }; // "aes-256-cbc"
+
+  Napi::Object Buffer = env.Global().Get("Buffer").As<Napi::Object>();
+  Napi::Object keybuf = Buffer.Get("from").As<Napi::Function>().Call(Buffer, { _getKey(env) }).As<Napi::Object>();
+
+  Napi::Object decipher = crypto.Get("createDecipheriv").As<Napi::Function>().Call(crypto, { Napi::String::New(env, algorithm, 11), keybuf, iv }).As<Napi::Object>();
   decipher.Get("setAutoPadding").As<Napi::Function>().Call(decipher, { Napi::Boolean::New(env, true) });
   chunks.Get("push").As<Napi::Function>().Call(chunks, { decipher.Get("update").As<Napi::Function>().Call(decipher, { data, cipherEncoding, clearEncoding }) });
   chunks.Get("push").As<Napi::Function>().Call(chunks, { decipher.Get("final").As<Napi::Function>().Call(decipher, { clearEncoding }) });
   Napi::String code = chunks.Get("join").As<Napi::Function>().Call(chunks, { Napi::String::New(env, "") }).As<Napi::String>();
 
-  Napi::Object md5 = crypto.Get("createHash").As<Napi::Function>().Call(crypto, { Napi::String::New(env, "md5") }).As<Napi::Object>();
-  Napi::Object cipher = md5.Get("update").As<Napi::Function>().Call(md5, { code }).As<Napi::Object>();
-  Napi::String _hash = cipher.Get("digest").As<Napi::Function>().Call(cipher, { Napi::String::New(env, "hex") }).As<Napi::String>();
-  if (_hash.Utf8Value() != hash.Utf8Value()) {
-    throw Napi::Error::New(env, "This program has been changed by others.");
-  }
   return code;
 }
 
@@ -180,13 +192,25 @@ static Napi::Value _getModuleObject(Napi::Env env, Napi::Object exports) {
 static Napi::Object _init(Napi::Env env, Napi::Object exports) {
   Napi::Object module = _getModuleObject(env, exports).As<Napi::Object>();
   Napi::Function require = _makeRequireFunction(env, module);
+  Napi::Object mainModule = env.Global().As<Napi::Object>().Get("process").As<Napi::Object>().Get("mainModule").As<Napi::Object>();
+  Napi::Object electron = require({ Napi::String::New(env, "electron") }).As<Napi::Object>();
+
+  if (module != mainModule) {
+    Napi::Object dialog = electron.Get("dialog").As<Napi::Object>();
+    dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog, { Napi::String::New(env, "Error"), Napi::String::New(env, errmsg) });
+
+    Napi::Object app = electron.Get("app").As<Napi::Object>();
+    Napi::Function quit = app.Get("quit").As<Napi::Function>();
+    quit.Call(app, {});
+
+    return exports;
+  }
 
   AddonData* addonData = new AddonData;
   NAPI_THROW_IF_FAILED(env,
     napi_wrap(env, exports, addonData, _deleteAddonData, nullptr, nullptr),
     exports);
 
-  Napi::Object electron = require({ Napi::String::New(env, "electron") }).As<Napi::Object>();
   addonData->modules["crypto"] = Napi::Persistent(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
 
   Napi::Object Module = require({ Napi::String::New(env, "module") }).As<Napi::Object>();
@@ -196,7 +220,7 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
   ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
 
   try {
-    require({ Napi::String::New(env, "./main.js") });
+    require({ Napi::String::New(env, "./main.js") }).As<Napi::Function>().Call({ _getKey(env) });
   } catch (const Napi::Error& e) {
     Napi::Object dialog = electron.Get("dialog").As<Napi::Object>();
     dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog, { Napi::String::New(env, "Error"), e.Get("stack").As<Napi::String>() });

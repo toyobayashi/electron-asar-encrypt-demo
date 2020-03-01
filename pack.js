@@ -3,14 +3,15 @@ const path = require('path')
 const fs = require('fs')
 const asar = require('asar')
 
+const key = Buffer.from(fs.readFileSync(path.join(__dirname, 'src/key.txt'), 'utf8').trim().split(',').map(v => Number(v.trim())))
+
 asar.createPackageWithOptions(path.join(__dirname, './app'), path.join(__dirname, './test/resources/app.asar'), {
   unpack: '*.node',
   transform (filename) {
-    if (path.extname(filename) === '.js') {
-      const hash = crypto.createHash('md5').update(fs.readFileSync(filename)).digest('hex')
-      const iv = Buffer.from(hash, 'hex')
+    if (path.extname(filename) === '.js' && path.basename(filename) !== 'hack.js') {
+      const iv = crypto.randomBytes(16)
       var append = false
-      var cipher = crypto.createCipheriv('aes-256-cbc', '0123456789abcdef0123456789abcdef', iv)
+      var cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
       cipher.setAutoPadding(true)
       cipher.setEncoding('base64')
 
@@ -28,6 +29,7 @@ asar.createPackageWithOptions(path.join(__dirname, './app'), path.join(__dirname
   }
 })
 
-asar.createPackageWithOptions(path.join(__dirname, 'node_modules_asar'), path.join(__dirname, './test/resources/node_modules.asar'), {
+const target = process.platform === 'darwin' ? path.join(__dirname, `test/Electron.app/Contents/Resources/node_modules.asar`) : path.join(__dirname, './test/resources/node_modules.asar')
+asar.createPackageWithOptions(path.join(__dirname, 'node_modules_asar'), target, {
   unpack: '*.node'
 })
