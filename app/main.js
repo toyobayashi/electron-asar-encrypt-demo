@@ -5,7 +5,8 @@ const { join } = require('path')
 const { existsSync } = require('fs')
 
 for (let i = 0; i < process.argv.length; i++) {
-  if (process.argv[i].indexOf('--inspect') !== -1 || process.argv[i].indexOf('--remote-debugging-port') !== -1) {
+  const arg = process.argv[i]
+  if (arg && arg.indexOf('--inspect') !== -1 || arg.indexOf('--remote-debugging-port') !== -1) {
     throw new Error('Not allow debugging this program.')
   }
 }

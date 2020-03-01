@@ -109,6 +109,13 @@ const { app, dialog } = require('electron')
 const crypto = require('crypto')
 const Module = require('module')
 
+const moduleParent = module.parent;
+if (module !== process.mainModule || (moduleParent !== Module && moduleParent !== undefined && moduleParent !== null)) {
+  // 如果该原生模块不是入口，就报错退出
+  dialog.showErrorBox('Error', 'This program has been changed by others.')
+  app.quit()
+}
+
 function getKey () {
   // 在这里内联由 JS 脚本生成的密钥
   // const unsigned char key[32] = {
@@ -174,17 +181,17 @@ function (exports, require, module, __filename, __dirname) {
 #include <napi.h>
 
 // 先封装一下脚本运行方法
-static Napi::Value _runScript(Napi::Env env, Napi::String script) {
+static Napi::Value _runScript(const Napi::Env& env, const Napi::String& script) {
   napi_value res;
   NAPI_THROW_IF_FAILED(env, napi_run_script(env, script, &res), env.Undefined());
   return Napi::Value(env, res);
 }
 
-static Napi::Value _runScript(Napi::Env env, const std::string& script) {
+static Napi::Value _runScript(const Napi::Env& env, const std::string& script) {
   return _runScript(env, Napi::String::New(env, script));
 }
 
-static Napi::Value _runScript(Napi::Env env, const char* script) {
+static Napi::Value _runScript(const Napi::Env& env, const char* script) {
   return _runScript(env, Napi::String::New(env, script));
 }
 ```
@@ -192,7 +199,7 @@ static Napi::Value _runScript(Napi::Env env, const char* script) {
 然后就可以愉快地 JS in C++ 了。
 
 ``` cpp
-static Napi::Value _getModuleObject(Napi::Env env, Napi::Object exports) {
+static Napi::Value _getModuleObject(const Napi::Env& env, const Napi::Object& exports) {
   std::string findModuleScript = "(function (exports) {\n"
     "function findModule(start, target) {\n"
     "  if (start.exports === target) {\n"
@@ -215,7 +222,7 @@ static Napi::Value _getModuleObject(Napi::Env env, Napi::Object exports) {
   }
   return res;
 }
-static Napi::Function _makeRequireFunction(Napi::Env env, Napi::Object module) {
+static Napi::Function _makeRequireFunction(const Napi::Env& env, const Napi::Object& module) {
   std::string script = "(function makeRequireFunction(mod) {\n"
       "const Module = mod.constructor;\n"
 
@@ -281,8 +288,12 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
   Napi::Object mainModule = env.Global().As<Napi::Object>().Get("process").As<Napi::Object>().Get("mainModule").As<Napi::Object>();
   // const electron = require('electron')
   Napi::Object electron = require({ Napi::String::New(env, "electron") }).As<Napi::Object>();
+  // require('module')
+  Napi::Object Module = require({ Napi::String::New(env, "module") }).As<Napi::Object>();
+  // module.parent
+  Napi::Value moduleParent = module.Get("parent");
 
-  if (module != mainModule) {
+  if (module != mainModule || (moduleParent != Module && moduleParent != env.Undefined() && moduleParent != env.Null())) {
     // 入口模块不是当前的原生模块，可能会被拦截 API 导致泄露密钥
     // 弹窗警告后退出
   }
@@ -296,8 +307,6 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
 
   // require('crypto')
   addonData->modules["crypto"] = Napi::Persistent(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
-  // require('module')
-  Napi::Object Module = require({ Napi::String::New(env, "module") }).As<Napi::Object>();
 
   Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
   addonData->functions["Module.prototype._compile"] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
@@ -343,7 +352,10 @@ Module.prototype._compile = function (content, filename) {
   return oldCompile.call(this, content, filename)
 }
 
+process.argv.length = 1
+
 require('./main.node')
+// 或 Module._load('./main.node', module, true)
 ```
 
 另外在主进程 JS 中要禁用 Node.js 调试，否则代码是可以在 Chrome 开发者工具中看到的。
@@ -355,6 +367,8 @@ for (let i = 0; i < process.argv.length; i++) {
   }
 }
 ```
+
+但这种方法防不住在 main.node 之前加载的脚本中设置 `process.argv.length = 1`，所以关键还是要防止入口文件被改成其它 JS 脚本。
 
 ## 渲染进程解密
 
