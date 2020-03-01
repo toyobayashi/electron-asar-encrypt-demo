@@ -3,6 +3,7 @@ const { app, BrowserWindow, nativeImage, ipcMain } = require('electron')
 const { format } = require('url')
 const { join } = require('path')
 const { existsSync } = require('fs')
+const assert = require('assert')
 
 for (let i = 0; i < process.argv.length; i++) {
   const arg = process.argv[i]
@@ -11,7 +12,12 @@ for (let i = 0; i < process.argv.length; i++) {
   }
 }
 
-console.log(require('outerpkg'))
+const str = require('outerpkg')
+if (!process.env.ELECTRON_RUN_AS_NODE) {
+  console.log(str)
+} else {
+  assert.strictEqual(str, 'outerpkg export string', 'Failed to load node_modules.asar.')
+}
 
 function isPromiseLike (obj) {
   return (obj instanceof Promise) || (
@@ -164,15 +170,18 @@ WindowManager.createMainWindow = function () {
   }
 }
 
-app.on('window-all-closed', function () {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
+if (!process.env.ELECTRON_RUN_AS_NODE) {
+  app.on('window-all-closed', function () {
+    if (process.platform !== 'darwin') {
+      app.quit()
+    }
+  })
+  
+  app.on('activate', function () {
+    WindowManager.createMainWindow()
+  })
+}
 
-app.on('activate', function () {
-  WindowManager.createMainWindow()
-})
 
 function mustNotExportKey (key) {
   // ipcMain.on('getkey', (e) => {
@@ -219,10 +228,16 @@ module.exports = function bootstrap (k) {
     throw new Error('Failed to bootstrap application.')
   }
   WindowManager.__SECRET_KEY__ = k
-  mustNotExportKey(k)
-  if (app.whenReady === 'function') {
-    app.whenReady().then(main).catch(err => console.log(err))
+  
+  if (!process.env.ELECTRON_RUN_AS_NODE) {
+    mustNotExportKey(k)
+    if (app.whenReady === 'function') {
+      app.whenReady().then(main).catch(err => console.log(err))
+    } else {
+      app.on('ready', main)
+    }
   } else {
-    app.on('ready', main)
+    assert.strictEqual(k.length, 32, 'Key length error.')
+    console.log('\nTest passed.\n')
   }
 }

@@ -46,6 +46,7 @@ try {
 
 */
 
+#include <cstdlib>
 #include <napi.h>
 #include <unordered_map>
 #include "script.h"
@@ -60,11 +61,17 @@ typedef struct AddonData {
   std::unordered_map<int, Napi::FunctionReference> functions;
 } AddonData;
 
-/* static void _log(Napi::Env env, Napi::Value value) {
+static void _log(Napi::Env env, Napi::Value value) {
   Napi::Object console = env.Global().As<Napi::Object>().Get("console").As<Napi::Object>();
   Napi::Function log = console.Get("log").As<Napi::Function>();
   log.Call(console, { value });
-} */
+}
+
+static void _error(Napi::Env env, Napi::Value value) {
+  Napi::Object console = env.Global().As<Napi::Object>().Get("console").As<Napi::Object>();
+  Napi::Function error = console.Get("error").As<Napi::Function>();
+  error.Call(console, { value });
+}
 
 static Napi::Array _getKey(const Napi::Env& env) {
   const unsigned char key[KEY_LENGTH] = {
@@ -151,12 +158,19 @@ static Napi::Value _getModuleObject(const Napi::Env& env, const Napi::Object& ex
 }
 
 static void _showErrorAndQuit(const Napi::Env& env, const Napi::Object& electron, const Napi::String& message) {
-  Napi::Object dialog = electron.Get("dialog").As<Napi::Object>();
-  dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog, { Napi::String::New(env, "Error"), message });
+  Napi::Value ELECTRON_RUN_AS_NODE = env.Global().As<Napi::Object>().Get("process").As<Napi::Object>().Get("env").As<Napi::Object>().Get("ELECTRON_RUN_AS_NODE");
 
-  Napi::Object app = electron.Get("app").As<Napi::Object>();
-  Napi::Function quit = app.Get("quit").As<Napi::Function>();
-  quit.Call(app, {});
+  if (!ELECTRON_RUN_AS_NODE.IsUndefined() && ELECTRON_RUN_AS_NODE != Napi::Number::New(env, 0) && ELECTRON_RUN_AS_NODE != Napi::String::New(env, "")) {
+    _error(env, message);
+    exit(1);
+  } else {
+    Napi::Object dialog = electron.Get("dialog").As<Napi::Object>();
+    dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog, { Napi::String::New(env, "Error"), message });
+
+    Napi::Object app = electron.Get("app").As<Napi::Object>();
+    Napi::Function quit = app.Get("quit").As<Napi::Function>();
+    quit.Call(app, {});
+  }
 }
 
 static Napi::Object _init(Napi::Env env, Napi::Object exports) {
