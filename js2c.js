@@ -1,6 +1,11 @@
 const fs = require('fs')
 const path = require('path')
-const terser = require('terser')
+let terser
+try {
+  terser = require('terser')
+} catch (_) {
+  process.exit(0)
+}
 
 var options = {}
 
