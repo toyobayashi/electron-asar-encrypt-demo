@@ -40,44 +40,15 @@ class WindowManager {
 
     let win = new BrowserWindow(browerWindowOptions)
     win.webContents.executeJavaScript(`!function () {
-      const crypto = require('crypto')
-      const Module = require('module')
-      const dialog = require('electron').remote.dialog
-
-      const key = Buffer.from([${WindowManager.__SECRET_KEY__.join(',')}])
-
-      function decrypt (body) {
-        const iv = body.slice(0, 16)
-        const data = body.slice(16)
-        const clearEncoding = 'utf8'
-        const cipherEncoding = 'binary'
-        const chunks = []
-        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
-        decipher.setAutoPadding(true)
-        chunks.push(decipher.update(data, cipherEncoding, clearEncoding))
-        chunks.push(decipher.final(clearEncoding))
-        const code = chunks.join('')
-        return code
-      }
-      
-      const oldCompile = Module.prototype._compile
-      
-      Module.prototype._compile = function (content, filename) {
-        if (filename.indexOf('app.asar') !== -1) {
-          return oldCompile.call(this, decrypt(Buffer.from(content, 'base64')), filename)
-        }
-        return oldCompile.call(this, content, filename)
-      }
-
-      require('./asar.js')
-      require('${entry}')
+      require('./renderer.node');
+      require('${entry}');
     }()`)
 
     win.on('ready-to-show', function () {
       if (!win) return
       win.show()
       win.focus()
-      if (process.env.NODE_ENV !== 'production') win.webContents.openDevTools()
+      win.webContents.openDevTools()
     })
 
     win.on('closed', () => {

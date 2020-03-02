@@ -1,4 +1,4 @@
-function findEntryModule(exports) {
+function findEntryModule(mainModule, exports) {
   function findModule(start, target) {
     if (start.exports === target) {
       return start;
@@ -11,5 +11,5 @@ function findEntryModule(exports) {
     }
     return null;
   }
-  return findModule(process.mainModule, exports);
+  return findModule(mainModule, exports);
 }

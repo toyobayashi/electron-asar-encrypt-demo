@@ -7,7 +7,7 @@ const { app, ipcMain } = require('electron')
 const assert = require('assert')
 
 if (!process.env.ELECTRON_RUN_AS_NODE) {
-  console.log(str)
+  console.log(`${process.type}: ${str}`)
 } else {
   assert.strictEqual(str, 'outerpkg export string', 'Failed to load node_modules.asar.')
 }
@@ -26,9 +26,6 @@ if (!process.env.ELECTRON_RUN_AS_NODE) {
 
 
 function mustNotExportKey (key) {
-  // ipcMain.on('getkey', (e) => {
-  //   e.returnValue = []
-  // })
   ipcMain.on('check', (e, arr) => {
     if (arr.length !== key.length) {
       e.returnValue = {
@@ -63,6 +60,21 @@ function mustNotExportKey (key) {
 
 function main () {
   WindowManager.createMainWindow()
+  WindowManager.getInstance().createWindow('another-window', {
+    width: 800,
+    height: 600,
+    show: false,
+    webPreferences: {
+      nodeIntegration: true,
+      devTools: true
+    }
+  },
+  require('url').format({
+    pathname: require('path').join(__dirname, './index.html'),
+    protocol: 'file:',
+    slashes: true
+  }),
+  './renderer/renderer.js')
 }
 
 module.exports = function bootstrap (k) {
