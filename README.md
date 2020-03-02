@@ -105,9 +105,6 @@ asar.createPackageWithOptions(
 ``` js
 // 用 C++ 写以下逻辑，可以使密钥被编译进动态库
 // 只有反编译动态库才有可能分析出来
-const { app, dialog } = require('electron')
-const crypto = require('crypto')
-const Module = require('module')
 
 const moduleParent = module.parent;
 if (module !== process.mainModule || (moduleParent !== Module && moduleParent !== undefined && moduleParent !== null)) {
@@ -115,6 +112,10 @@ if (module !== process.mainModule || (moduleParent !== Module && moduleParent !=
   dialog.showErrorBox('Error', 'This program has been changed by others.')
   app.quit()
 }
+
+const { app, dialog } = require('electron')
+const crypto = require('crypto')
+const Module = require('module')
 
 function getKey () {
   // 在这里内联由 JS 脚本生成的密钥
@@ -127,19 +128,24 @@ function getKey () {
 function decrypt (body) { // body 是 Buffer
   const iv = body.slice(0, 16) // 前 16 字节是 IV
   const data = body.slice(16) // 16 字节以后是加密后的代码
-  const clearEncoding = 'utf8' // 输出是字符串
-  const cipherEncoding = 'binary' // 输入是二进制
-  const chunks = [] // 保存分段的字符串
-  const decipher = crypto.createDecipheriv(
-    'aes-256-cbc',
-    getKey(),
-    iv
-  )
-  decipher.setAutoPadding(true)
-  chunks.push(decipher.update(data, cipherEncoding, clearEncoding))
-  chunks.push(decipher.final(clearEncoding))
-  const code = chunks.join('')
-  return code
+
+  // 最好使用原生库来做解密，Node API 存在被拦截的风险
+
+  // const clearEncoding = 'utf8' // 输出是字符串
+  // const cipherEncoding = 'binary' // 输入是二进制
+  // const chunks = [] // 保存分段的字符串
+  // const decipher = crypto.createDecipheriv(
+  //   'aes-256-cbc',
+  //   getKey(),
+  //   iv
+  // )
+  // decipher.setAutoPadding(true)
+  // chunks.push(decipher.update(data, cipherEncoding, clearEncoding))
+  // chunks.push(decipher.final(clearEncoding))
+  // const code = chunks.join('')
+  // return code
+
+  // [native code]
 }
 
 const oldCompile = Module.prototype._compile
@@ -154,7 +160,8 @@ Module.prototype._compile = function (content, filename) {
 }
 
 try {
-  require('./main.js')(getKey()) // 主进程创建窗口在这里面，把密钥给 JS，后面要用上
+  // 主进程创建窗口在这里面，如果需要的话把密钥传给 JS，最好不要传
+  require('./main.js')(getKey()) 
 } catch (err) {
   // 防止 Electron 报错后不退出
   dialog.showErrorBox('Error', err.stack)
@@ -278,6 +285,7 @@ static void _deleteAddonData(napi_env env, void* data, void* hint) {
 static Napi::Value modulePrototypeCompile(const Napi::CallbackInfo& info) {
   AddonData* addonData = static_cast<AddonData*>(info.Data());
   Napi::Function oldCompile = addonData->functions["Module.prototype._compile"].Value();
+  // 这里推荐使用 C/C++ 的库来做解密
   // ...
 }
 
@@ -306,14 +314,14 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
     exports);
 
   // require('crypto')
-  addonData->modules["crypto"] = Napi::Persistent(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
+  // addonData->modules["crypto"] = Napi::Persistent(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
 
   Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
   addonData->functions["Module.prototype._compile"] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
   ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
 
   try {
-    require({ Napi::String::New(env, "./main.js") });
+    require({ Napi::String::New(env, "./main.js") }).Call({ _getKey() });
   } catch (const Napi::Error& e) {
     // 弹窗后退出
     // ...
@@ -372,22 +380,9 @@ for (let i = 0; i < process.argv.length; i++) {
 
 ## 渲染进程解密
 
-为什么渲染进程不能和主进程一样执行 `main.node` ？
+和主进程的逻辑类似，可以利用预定义宏在 C++ 中区分开主进程和渲染进程。为渲染进程再编译出一个 `renderer.node`。渲染进程加载的原生模块必须是 `上下文感知模块`，用 NAPI 写的模块已经是上下文感知的，所以没有问题，如果用 V8 的 API 去写就是不行的。
 
-因为渲染进程可能有很多个，就是说可能有很多个窗口，但是原生模块是不能被 Electron 渲染进程中的 Node 重复加载的，这个问题在 Electron 官方仓库有讨论，不建议在渲染进程加载原生模块。
-
-那怎么搞？直接写成 JS 就可以了，因为渲染进程的 JS 也会被加密，不知道密钥没法解密，所以不用担心密钥泄露，把上面的 Hack `Module.prototype._compile` 的逻辑用 JS 写就行了。
-
-这里有个限制，不能在 HTML 中直接引用 `<script>` 标签加载这个 JS，因为 HTML 中的 `<script>` 不走 `Module.prototype._compile`，所以只能在主进程中调用 `browserWindow.webContents.executeJavaScript()` 来为每个窗口最先运行这段代码，然后再 require 其它可能需要解密的 JS 文件。
-
-密钥从原生模块传到了 JS，不用再在 JS 里面写一遍密钥：
-
-``` js
-module.exports = function (key) {
-  // executeJavaScript 的时候把 key 传进数组里去
-  // executeJavaScript(`const key = Buffer.from([${key.join(',')}])`)
-}
-```
+这里有个限制，不能在 HTML 中直接引用 `<script>` 标签加载 JS，因为 HTML 中的 `<script>` 不走 `Module.prototype._compile`，所以只能在主进程中调用 `browserWindow.webContents.executeJavaScript()` 来为每个窗口最先加载原生模块，然后再 require 其它可能需要解密的 JS 文件。
 
 ## 局限性
 
@@ -448,7 +443,7 @@ Module._resolveLookupPaths = originalResolveLookupPaths.length === 2 ? function 
 
 ## 总结
 
-打包时做加密，运行时做解密，主进程放 C++ 里，渲染进程放加密的 JS 里。
+打包时做加密，运行时做解密，解密逻辑放 C++ 里，而且必须是最先加载。
 
 最后关键，不要在预加载的代码中 `console.log`，不要忘了在生产环境关掉 `devTools` 和打开 `nodeIntegration`：
 
