@@ -1,0 +1,16 @@
+language: node_js
+
+node_js:
+  - lts/*
+os:
+  - windows
+  - linux
+  - osx
+
+before_install:
+  - if [ "$TRAVIS_OS_NAME" != "windows" ]; then chmod +x ./test.sh; fi
+
+install:
+  - npm install
+script: 
+  - if [ "$TRAVIS_OS_NAME" != "windows" ]; then ./test.sh node; else .\test.bat node; fi
