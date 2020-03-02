@@ -4,7 +4,11 @@ let terser
 try {
   terser = require('terser')
 } catch (_) {
-  process.exit(0)
+  terser = {
+    minify (code) {
+      return { code }
+    }
+  }
 }
 
 var options = {}

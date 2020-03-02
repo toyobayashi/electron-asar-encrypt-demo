@@ -7,6 +7,9 @@ os:
   - linux
   - osx
 
+env:
+  - ELECTRON_RUN_AS_NODE="1"
+
 before_install:
   - if [ "$TRAVIS_OS_NAME" != "windows" ]; then chmod +x ./test.sh; fi
 
@@ -14,5 +17,7 @@ install:
   - node keygen
   - node js2c
   - npm install
-script: 
-  - if [ "$TRAVIS_OS_NAME" != "windows" ]; then ./test.sh node; else .\test.bat node; fi
+script:
+  - npm run build
+  - node pack
+  - if [ "$TRAVIS_OS_NAME" != "windows" ]; then ./test/electron ./test/resources/app.asar; else test\electron.exe test\resources\app.asar; fi
