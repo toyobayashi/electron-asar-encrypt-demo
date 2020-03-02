@@ -54,7 +54,11 @@ try {
 #define KEY_LENGTH 32
 
 #define FN_MODULE_PROTOTYPE__COMPILE 0
+#define FN_CRYPTO_CREATEDECIPHERIV 1
+
 #define MD_CRYPTO 1
+
+static const char errmsg[] = "This program has been changed by others.";
 
 typedef struct AddonData {
   std::unordered_map<int, Napi::ObjectReference> modules;
@@ -98,13 +102,14 @@ static Napi::Value _decrypt(const Napi::Env& env, const Napi::Object& body, Addo
   Napi::String cipherEncoding = Napi::String::New(env, "binary");
   Napi::Array chunks = Napi::Array::New(env);
   Napi::Object crypto = addonData->modules[MD_CRYPTO].Value();
+  Napi::Function createDecipheriv = addonData->functions[FN_CRYPTO_CREATEDECIPHERIV].Value();
 
   const char algorithm[12] = { 0x61, 0x65, 0x73, 0x2d, 0x32, 0x35, 0x36, 0x2d, 0x63, 0x62, 0x63, 0 }; // "aes-256-cbc"
 
   Napi::Object Buffer = env.Global().Get("Buffer").As<Napi::Object>();
   Napi::Object keybuf = Buffer.Get("from").As<Napi::Function>().Call(Buffer, { _getKey(env) }).As<Napi::Object>();
 
-  Napi::Object decipher = crypto.Get("createDecipheriv").As<Napi::Function>().Call(crypto, { Napi::String::New(env, algorithm, 11), keybuf, iv }).As<Napi::Object>();
+  Napi::Object decipher = createDecipheriv.Call(crypto, { Napi::String::New(env, algorithm, 11), keybuf, iv }).As<Napi::Object>();
   decipher.Get("setAutoPadding").As<Napi::Function>().Call(decipher, { Napi::Boolean::New(env, true) });
   chunks.Get("push").As<Napi::Function>().Call(chunks, { decipher.Get("update").As<Napi::Function>().Call(decipher, { data, cipherEncoding, clearEncoding }) });
   chunks.Get("push").As<Napi::Function>().Call(chunks, { decipher.Get("final").As<Napi::Function>().Call(decipher, { clearEncoding }) });
@@ -173,6 +178,20 @@ static void _showErrorAndQuit(const Napi::Env& env, const Napi::Object& electron
   }
 }
 
+static Napi::Value cryptoGetter(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  AddonData* addonData = static_cast<AddonData*>(info.Data());
+
+  return addonData->functions[FN_CRYPTO_CREATEDECIPHERIV].Value();
+}
+static Napi::Value cryptoSetter(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  Napi::Error err = Napi::Error::New(env, errmsg);
+
+  err.ThrowAsJavaScriptException();
+  return env.Undefined();
+}
+
 static Napi::Object _init(Napi::Env env, Napi::Object exports) {
   Napi::Object module = _getModuleObject(env, exports).As<Napi::Object>();
   Napi::Function require = _makeRequireFunction(env, module);
@@ -183,7 +202,7 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
   Napi::Value moduleParent = module.Get("parent");
 
   if (module != mainModule || (moduleParent != Module && moduleParent != env.Undefined() && moduleParent != env.Null())) {
-    _showErrorAndQuit(env, electron, Napi::String::New(env, "This program has been changed by others."));
+    _showErrorAndQuit(env, electron, Napi::String::New(env, errmsg));
     return exports;
   }
 
@@ -192,11 +211,23 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
     napi_wrap(env, exports, addonData, _deleteAddonData, nullptr, nullptr),
     exports);
 
-  addonData->modules[MD_CRYPTO] = Napi::Persistent(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
+  Napi::Object crypto = require({ Napi::String::New(env, "crypto") }).As<Napi::Object>();
+  
+
+  const char createDecipheriv[] = "createDecipheriv";
 
   Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
   addonData->functions[FN_MODULE_PROTOTYPE__COMPILE] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
+  addonData->functions[FN_CRYPTO_CREATEDECIPHERIV] = Napi::Persistent(crypto.Get(createDecipheriv).As<Napi::Function>());
+  crypto.Delete(createDecipheriv);
+  Napi::Object desc = Napi::Object::New(env);
+  desc["get"] = Napi::Function::New(env, cryptoGetter, "get", addonData);
+  desc["set"] = Napi::Function::New(env, cryptoSetter, "set", addonData);
+  Napi::Object Object = env.Global().As<Napi::Object>().Get("Object").As<Napi::Object>();
+  Object.Get("defineProperty").As<Napi::Function>().Call(Object, { crypto, Napi::String::New(env, createDecipheriv), desc });
   ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
+
+  addonData->modules[MD_CRYPTO] = Napi::Persistent(crypto);
 
   try {
     require({ Napi::String::New(env, "./main.js") }).As<Napi::Function>().Call({ _getKey(env) });
