@@ -7,7 +7,8 @@
     "install": "node keygen",
     "postinstall": "node postinstall.js",
     "build": "node js2c&&node-gyp configure --target=7.1.7 --disturl=https://electronjs.org/headers&&node-gyp build",
-    "build:debug": "node js2c&&node-gyp configure --target=7.1.7 --disturl=https://electronjs.org/headers&&node-gyp build --debug"
+    "build:debug": "node js2c&&node-gyp configure --target=7.1.7 --disturl=https://electronjs.org/headers&&node-gyp build --debug",
+    "test": "npm run build&&node pack&&asar-node ./test/resources/app.asar"
   },
   "keywords": [
     "asar"
@@ -16,6 +17,7 @@
   "license": "MIT",
   "devDependencies": {
     "asar": "^2.0.3",
+    "asar-node": "^2.1.1",
     "electron": "7.1.7",
     "fs-extra": "^8.1.0",
     "node-addon-api": "^2.0.0",

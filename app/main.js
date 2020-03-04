@@ -91,6 +91,7 @@ module.exports = function bootstrap (k) {
       app.on('ready', main)
     }
   } else {
+    console.log(k)
     assert.strictEqual(k.length, 32, 'Key length error.')
     console.log('\nTest passed.\n')
   }
