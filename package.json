@@ -19,6 +19,7 @@
     "electron": "7.1.7",
     "fs-extra": "^8.1.0",
     "node-addon-api": "^2.0.0",
+    "node-gyp": "^5.1.0",
     "terser": "^4.6.4"
   }
 }
