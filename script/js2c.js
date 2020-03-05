@@ -1,5 +1,5 @@
 const fs = require('fs')
-const path = require('path')
+const getPath = require('./path.js')
 let terser
 try {
   terser = require('terser')
@@ -13,8 +13,8 @@ try {
 
 var options = {}
 
-var result1 = terser.minify(fs.readFileSync(path.join(__dirname, 'src/find.js'), 'utf8'), options);
-var result2 = terser.minify(fs.readFileSync(path.join(__dirname, 'src/require.js'), 'utf8'), options);
+var result1 = terser.minify(fs.readFileSync(getPath('src/find.js'), 'utf8'), options);
+var result2 = terser.minify(fs.readFileSync(getPath('src/require.js'), 'utf8'), options);
 
 function wrap (code) {
   return `(${code});`
@@ -33,4 +33,4 @@ function buf2pchar(buf, varname) {
 const scriptFind = buf2pchar(str2buf(wrap(result1.code)), 'scriptFind')
 const scriptRequire = buf2pchar(str2buf(wrap(result2.code)), 'scriptRequire')
 
-fs.writeFileSync(path.join(__dirname, 'src/script.h'), scriptFind + '\n' + scriptRequire + '\n', 'utf8')
+fs.writeFileSync(getPath('src/script.h'), scriptFind + '\n' + scriptRequire + '\n', 'utf8')

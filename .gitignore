@@ -4,3 +4,4 @@ package-lock.json
 /build
 *.node
 /src/key*
+.DS_Store

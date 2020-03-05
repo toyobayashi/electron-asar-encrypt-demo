@@ -60,21 +60,21 @@ function mustNotExportKey (key) {
 
 function main () {
   WindowManager.createMainWindow()
-  WindowManager.getInstance().createWindow('another-window', {
-    width: 800,
-    height: 600,
-    show: false,
-    webPreferences: {
-      nodeIntegration: true,
-      devTools: true
-    }
-  },
-  require('url').format({
-    pathname: require('path').join(__dirname, './index.html'),
-    protocol: 'file:',
-    slashes: true
-  }),
-  './renderer/renderer.js')
+  // WindowManager.getInstance().createWindow('another-window', {
+  //   width: 800,
+  //   height: 600,
+  //   show: false,
+  //   webPreferences: {
+  //     nodeIntegration: true,
+  //     devTools: false
+  //   }
+  // },
+  // require('url').format({
+  //   pathname: require('path').join(__dirname, './index.html'),
+  //   protocol: 'file:',
+  //   slashes: true
+  // }),
+  // './renderer/renderer.js')
 }
 
 module.exports = function bootstrap (k) {

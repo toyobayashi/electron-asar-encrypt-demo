@@ -4,11 +4,12 @@
   "description": "electron-asar-encrypt-demo",
   "main": "pack.js",
   "scripts": {
-    "install": "node keygen",
-    "postinstall": "node postinstall.js",
-    "build": "node js2c&&node-gyp configure --target=7.1.7 --disturl=https://electronjs.org/headers&&node-gyp build",
-    "build:debug": "node js2c&&node-gyp configure --target=7.1.7 --disturl=https://electronjs.org/headers&&node-gyp build --debug",
-    "test": "npm run build&&node pack&&cross-env ELECTRON_RUN_AS_NODE=1 asar-node ./test/resources/app.asar"
+    "install": "node ./script/keygen",
+    "postinstall": "node ./script/postinstall.js",
+    "build": "node ./script/js2c&&node-gyp configure --target=7.1.7 --disturl=https://electronjs.org/headers&&node-gyp build",
+    "build:debug": "node ./script/js2c&&node-gyp configure --target=7.1.7 --disturl=https://electronjs.org/headers&&node-gyp build --debug",
+    "test": "npm run build&&node ./script/pack&&node ./script/test",
+    "start": "node ./script/start.js"
   },
   "keywords": [
     "asar"
@@ -18,7 +19,6 @@
   "devDependencies": {
     "asar": "^2.0.3",
     "asar-node": "^2.1.2",
-    "cross-env": "^7.0.1",
     "electron": "7.1.7",
     "fs-extra": "^8.1.0",
     "node-addon-api": "^2.0.0",

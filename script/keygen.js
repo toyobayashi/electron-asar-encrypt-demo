@@ -1,8 +1,8 @@
 const fs = require('fs')
-const path = require('path')
+const getPath = require('./path.js')
 const crypto = require('crypto')
 
-const target = path.join(__dirname, 'src/key.txt')
+const target = getPath('src/key.txt')
 
 if (!fs.existsSync(target)) {
   writeKey()
