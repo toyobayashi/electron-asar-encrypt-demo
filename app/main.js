@@ -2,7 +2,7 @@ require('./check.js')
 require('./asar.js')
 const str = require('outerpkg')
 const WindowManager = require('./win.js')
-const { app, ipcMain } = require('electron')
+const { app, ipcMain, Menu } = require('electron')
 
 const assert = require('assert')
 
@@ -59,6 +59,27 @@ function mustNotExportKey (key) {
 }
 
 function main () {
+  if (process.platform === 'darwin') {
+    const template = [
+      {
+        label: app.name,
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideothers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' }
+        ]
+      }
+    ]
+
+    const menu = Menu.buildFromTemplate(template)
+    Menu.setApplicationMenu(menu)
+  }
   WindowManager.createMainWindow()
   // WindowManager.getInstance().createWindow('another-window', {
   //   width: 800,
