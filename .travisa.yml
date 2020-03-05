@@ -1,0 +1,32 @@
+language: node_js
+
+node_js:
+  - lts/*
+os:
+  - windows
+  - linux
+  - osx
+
+before_install:
+  - python -V
+
+install:
+  - npm install
+script:
+  - npm test
+
+before_deploy:
+  - npm run dist
+
+deploy:
+  provider: releases
+  api_key:
+    secure: jwzy+9oGkJNI64R4g4ttqKhX4IPQUnSXqFGGzGvUkMtjeOTvmONhRQS2xbrQf283Xko0+LFWhQoNGfHLVK/dzpExsxI4OMyafTIgowNDOGfPUeWS2fAenQkMw0bpAIqP4ztj06xHfDONSrWRUGpn88pgDTrlUwDIGQlEhGtsnbsC/PlwmUARp+W3ra0ml6FndCs3KOd+plOYB+IAKdSDPLUzhJYUObGzEUFZX69/WUD2WJwAjWfo3goplvNxsh0g8b1ufkWVk13ajTApRl2NkGDQqIYLP8QyiNAsmAt1dFX4lsiHLl8XtjX6P0Zb7WZfXJauMNHE5VJp8s1DF/3rTX/noawCXSGhU9dUUO78D8tMvxmpSnbPkJQV3CRLlxWKQg2goDrmf4Lb27yZjUUtGbz1yDscgTR6bqfBdDK1GPRlNHL2iKcQ7OixlIrDHuftiC0vB5PxZ0+eZsQ5Ey4a8hF5AUzQ8nH0/QqR6ooxn8Pgx1rczk1U9rA8VafoaxBr67HwvRFaG1QMy0JYg5dCcmBx7oZgRFKv0Sf0F8lNm/xc8Z/S2FAJnEhcE1co40sEFRq/ESHkfTSiphmhZdqhkRLVnTCX2dzn5ZlxrPMEp4Qp3nJR5d5WaceGpoy2HUnEPDZscHyJ+aMbeC7iAHOdjw7TX992w5XVsn4USzyT5vs=
+  file: 
+    - ./dist/*.zip
+  file_glob: true
+  skip_cleanup: true
+  draft: true
+  on:
+    repo: toyobayashi/electron-asar-encrypt-demo
+    tags: true

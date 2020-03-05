@@ -5,3 +5,4 @@ package-lock.json
 *.node
 /src/key*
 .DS_Store
+/dist

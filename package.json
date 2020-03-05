@@ -9,6 +9,7 @@
     "build": "node ./script/js2c&&node-gyp configure --target=7.1.7 --disturl=https://electronjs.org/headers&&node-gyp build",
     "build:debug": "node ./script/js2c&&node-gyp configure --target=7.1.7 --disturl=https://electronjs.org/headers&&node-gyp build --debug",
     "test": "npm run build&&node ./script/pack&&node ./script/test",
+    "dist": "node ./script/dist.js",
     "start": "node ./script/start.js"
   },
   "keywords": [
@@ -17,6 +18,7 @@
   "author": "toyobayashi",
   "license": "MIT",
   "devDependencies": {
+    "@tybys/cross-zip": "^3.0.4",
     "asar": "^2.0.3",
     "asar-node": "^2.1.2",
     "electron": "7.1.7",
