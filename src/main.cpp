@@ -172,27 +172,13 @@ static Napi::Value modulePrototypeCompile(const Napi::CallbackInfo& info) {
   return oldCompile.Call(info.This(), { content, filename });
 }
 
-static Napi::Value _runScript(const Napi::Env& env, const Napi::String& script) {
-  napi_value res;
-  NAPI_THROW_IF_FAILED(env, napi_run_script(env, script, &res), env.Undefined());
-  return Napi::Value(env, res);
-}
-
-static Napi::Value _runScript(const Napi::Env& env, const std::string& script) {
-  return _runScript(env, Napi::String::New(env, script));
-}
-
-static Napi::Value _runScript(const Napi::Env& env, const char* script) {
-  return _runScript(env, Napi::String::New(env, script));
-}
-
-static Napi::Function _makeRequireFunction(const Napi::Env& env, const Napi::Object& module) {
-  Napi::Function _makeRequire = _runScript(env, scriptRequire).As<Napi::Function>();
+static Napi::Function _makeRequireFunction(Napi::Env& env, const Napi::Object& module) {
+  Napi::Function _makeRequire = env.RunScript(scriptRequire).As<Napi::Function>();
   return _makeRequire({ module }).As<Napi::Function>();
 }
 
-static Napi::Value _getModuleObject(const Napi::Env& env, const Napi::Object& mainModule, const Napi::Object& thisExports) {
-  Napi::Function _findFunction = _runScript(env, scriptFind).As<Napi::Function>();
+static Napi::Value _getModuleObject(Napi::Env& env, const Napi::Object& mainModule, const Napi::Object& thisExports) {
+  Napi::Function _findFunction = env.RunScript(scriptFind).As<Napi::Function>();
   Napi::Value res = _findFunction({ mainModule, thisExports });
   if (res.IsNull()) {
     Napi::Error::New(env, "Cannot find module object.").ThrowAsJavaScriptException();

@@ -1,0 +1,33 @@
+name: Build
+
+on: push
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-node@v1
+
+    - run: npm install
+    - run: npm test
+    - run: npm run dist
+      if: ${{ startsWith(github.event.ref, 'refs/tags') }}
+    
+    - name: Create release
+      if: ${{ startsWith(github.event.ref, 'refs/tags') }}
+      uses: toyobayashi/upload-release-assets@v3.0.0 
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.event.after }}
+        release_name: ${{ github.event.after }}
+        draft: true
+        prerelease: false
+        assets: ./dist/*.zip
