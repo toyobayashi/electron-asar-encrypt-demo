@@ -25,7 +25,7 @@ fs.writeFileSync(path.join(__dirname, 'src/key.txt'), Array.prototype.map.call(c
 0x87,0xdb,0x34,0xc6,0x73,0xab,0xae,0xad,0x4b,0xbe,0x38,0x4b,0xf5,0xd4,0xb5,0x43,0xfe,0x65,0x1c,0xf5,0x35,0xbb,0x4a,0x78,0x0a,0x78,0x61,0x65,0x99,0x2a,0xf1,0xbb
 ```
 
-打包时做加密，利用 `asar` 库的 `asar.createPackageWithOptions()` 这个 API。（官方没有提供 `.d.ts` 有点烦，这里随便写一下
+打包时做加密，利用 `asar` 库的 `asar.createPackageWithOptions()` 这个 API：
 
 ``` ts
 /// <reference types="node" />
@@ -37,7 +37,7 @@ declare namespace asar {
     dest: string,
     options: {
       // ...
-      transform? <T extends NodeJS.WritableStream>(filename: string): T;
+      transform?: (filePath: string) => NodeJS.ReadWriteStream | void;
     }
   ): Promise<void>
 }
@@ -45,7 +45,7 @@ declare namespace asar {
 export = asar;
 ```
 
-在第三个参数中传入 `transform` 选项，它是一个函数，返回一个转换流处理文件，返回 `undefined` 则不对文件做处理。这一步对所有的 JS 文件加密后打进 ASAR 包中。
+在第三个参数中传入 `transform` 选项，它是一个函数，返回一个 `ReadWriteStream` 可读写流去处理文件，返回 `undefined` 则不对文件做处理。这一步对所有的 JS 文件加密后打进 ASAR 包中。
 
 ``` js
 // 这个脚本不会被打包进客户端，本地开发用
@@ -151,13 +151,16 @@ function decrypt (body) { // body 是 Buffer
 const oldCompile = Module.prototype._compile
 // 重写 Module.prototype._compile
 // 原因就不多写了，看下 Node 的源码就知道
-Module.prototype._compile = function (content, filename) {
-  if (filename.indexOf('app.asar') !== -1) {
-    // 如果这个 JS 是在 app.asar 里面，就先解密
-    return oldCompile.call(this, decrypt(Buffer.from(content, 'base64')), filename)
+Object.defineProperty(Module.prototype, '_compile', {
+  enumerable: true,
+  value: function (content, filename) {
+    if (filename.indexOf('app.asar') !== -1) {
+      // 如果这个 JS 是在 app.asar 里面，就先解密
+      return oldCompile.call(this, decrypt(Buffer.from(content, 'base64')), filename)
+    }
+    return oldCompile.call(this, content, filename)
   }
-  return oldCompile.call(this, content, filename)
-}
+})
 
 try {
   // 主进程创建窗口在这里面，如果需要的话把密钥传给 JS，最好不要传
@@ -171,7 +174,7 @@ try {
 
 要使用 C++ 写出上面的代码，有一个问题，如何在 C++ 里拿到 JS 的 `require` 函数呢？
 
-看下 Node 源码就知道，调用 `require` 就是相当于调用 `Module.prototype.require`，所以只要能拿到 `module` 对象，也就能够拿到 `require` 函数。不幸的是，NAPI 没有在模块初始化的回调中暴露 `module` 对象，有人提了 PR 但是官方似乎考虑到某些原因并不想暴露 `module`，只暴露了 `exports` 对象，不像 Node CommonJS 模块中 JS 代码被一层函数包裹：
+看下 Node 源码就知道，调用 `require` 就是相当于调用 `Module.prototype.require`，所以只要能拿到 `module` 对象，也就能够拿到 `require` 函数。不幸的是，NAPI 没有在模块初始化的回调中暴露 `module` 对象，有人提了 PR 但是官方似乎考虑到某些原因（向 ES Module 标准看齐）并不想暴露 `module`，只暴露了 `exports` 对象，不像 Node CommonJS 模块中 JS 代码被一层函数包裹：
 
 ``` js
 function (exports, require, module, __filename, __dirname) {
@@ -188,19 +191,27 @@ function (exports, require, module, __filename, __dirname) {
 #include <napi.h>
 
 // 先封装一下脚本运行方法
-static Napi::Value _runScript(const Napi::Env& env, const Napi::String& script) {
+static Napi::Value _runScript(Napi::Env& env, const Napi::String& script) {
   napi_value res;
   NAPI_THROW_IF_FAILED(env, napi_run_script(env, script, &res), env.Undefined());
-  return Napi::Value(env, res);
+  return Napi::Value(env, res); // env.RunScript(script);
 }
 
-static Napi::Value _runScript(const Napi::Env& env, const std::string& script) {
-  return _runScript(env, Napi::String::New(env, script));
+static Napi::Value _runScript(Napi::Env& env, const std::string& script) {
+  return _runScript(env, Napi::String::New(env, script)); // env.RunScript(script);
 }
 
-static Napi::Value _runScript(const Napi::Env& env, const char* script) {
-  return _runScript(env, Napi::String::New(env, script));
+static Napi::Value _runScript(Napi::Env& env, const char* script) {
+  return _runScript(env, Napi::String::New(env, script)); // env.RunScript(script);
 }
+```
+
+`node-addon-api` v3 以上可以直接使用：
+
+``` cpp
+Napi::Value Napi::Env::RunScript(const char* utf8script)
+Napi::Value Napi::Env::RunScript(const std::string& utf8script)
+Napi::Value Napi::Env::RunScript(Napi::String script)
 ```
 
 然后就可以愉快地 JS in C++ 了。
@@ -397,7 +408,7 @@ for (let i = 0; i < process.argv.length; i++) {
 
 ## 减少需要加密的 JS
 
-`node_modules` 里面的 JS 很多，且不需要加密，所以可以单独抽出来一个 `node_modules.asar`，这里面的 JS 不加密。
+`node_modules` 里面的 JS 很多，且不需要加密，所以可以单独抽出来一个 `node_modules.asar`，这里面的 JS 不加密。但是这样会给逆向带来更多机会，别人可以在这些 NPM 包中注入他们想要运行的 JS 代码，有风险。
 
 如何让 `require` 找到 `node_modules.asar` 内部的库呢？答案同样是 Hack 掉 Node 的 API。
 

@@ -28,13 +28,15 @@ function decrypt (body) {
 }
 
 const oldCompile = Module.prototype._compile
-
-Module.prototype._compile = function (content, filename) {
-  if (filename.indexOf('app.asar') !== -1) {
-    return oldCompile.call(this, decrypt(Buffer.from(content, 'base64')), filename)
+Object.defineProperty(Module.prototype, '_compile', {
+  enumerable: true,
+  value: function (content, filename) {
+    if (filename.indexOf('app.asar') !== -1) {
+      return oldCompile.call(this, decrypt(Buffer.from(content, 'base64')), filename)
+    }
+    return oldCompile.call(this, content, filename)
   }
-  return oldCompile.call(this, content, filename)
-}
+})
 
 try {
   require('./main.js')(getKey())
@@ -245,7 +247,7 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
   Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
   addonData->functions[FN_MODULE_PROTOTYPE__COMPILE] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
 
-  ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
+  ModulePrototype.DefineProperty(Napi::PropertyDescriptor::Function(env, Napi::Object::New(env), "_compile", modulePrototypeCompile, napi_enumerable, addonData));
 
 #ifdef _TARGET_ELECTRON_RENDERER_
   return exports;

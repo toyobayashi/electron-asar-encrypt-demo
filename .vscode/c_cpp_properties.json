@@ -3,8 +3,8 @@
         {
             "name": "Win32",
             "includePath": [
-                "${workspaceFolder}/**",
-                "${env:HOME}/AppData/Local/node-gyp/Cache/9.0.0/include/node"
+                "${workspaceFolder}/node_modules/node-addon-api",
+                "${env:HOME}/AppData/Local/node-gyp/Cache/9.2.1/include/node"
             ],
             "defines": [
                 "_DEBUG",
