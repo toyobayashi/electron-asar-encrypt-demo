@@ -195,18 +195,10 @@ static void _showErrorAndQuit(const Napi::Env& env, const Napi::Object& electron
     _error(env, message);
     exit(1);
   } else {
-#ifdef _TARGET_ELECTRON_RENDERER_
-    Napi::Object dialog = electron.Get("remote").As<Napi::Object>().Get("dialog").As<Napi::Object>();
-#else
     Napi::Object dialog = electron.Get("dialog").As<Napi::Object>();
-#endif
     dialog.Get("showErrorBox").As<Napi::Function>().Call(dialog, { Napi::String::New(env, "Error"), message });
 
-#ifdef _TARGET_ELECTRON_RENDERER_
-    Napi::Object app = electron.Get("remote").As<Napi::Object>().Get("app").As<Napi::Object>();
-#else
     Napi::Object app = electron.Get("app").As<Napi::Object>();
-#endif
     Napi::Function quit = app.Get("quit").As<Napi::Function>();
     quit.Call(app, {});
   }
@@ -229,7 +221,9 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
 
 #ifdef _TARGET_ELECTRON_RENDERER_
   if (moduleParent != mainModule) {
-    _showErrorAndQuit(env, electron, Napi::String::New(env, errmsg));
+    Napi::Object ipcRenderer = electron.Get("ipcRenderer").As<Napi::Object>();
+    Napi::Function sendSync = ipcRenderer.Get("sendSync").As<Napi::Function>();
+    sendSync.Call(ipcRenderer, { Napi::String::New(env, "__SHOW_ERROR_AND_QUIT__") });
     return exports;
   }
 #else
@@ -252,6 +246,20 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
 #ifdef _TARGET_ELECTRON_RENDERER_
   return exports;
 #else
+
+  Napi::Object ipcMain = electron.Get("ipcMain").As<Napi::Object>();
+  Napi::Function once = ipcMain.Get("once").As<Napi::Function>();
+
+  once.Call(ipcMain, { Napi::String::New(env, "__SHOW_ERROR_AND_QUIT__"), Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    Napi::Object event = info[0].As<Napi::Object>();
+    Napi::Object mm = env.Global().Get("process").As<Napi::Object>().Get("mainModule").As<Napi::Object>();
+    Napi::Function req = mm.Get("require").As<Napi::Function>();
+    _showErrorAndQuit(env, req.Call(mm, { Napi::String::New(env, "electron") }).As<Napi::Object>(), Napi::String::New(env, errmsg));
+    event.Set("returnValue", env.Null());
+    return env.Undefined();
+  }) });
+
   try {
     require({ Napi::String::New(env, "./main.js") }).As<Napi::Function>().Call({ _getKey(env) });
   } catch (const Napi::Error& e) {
