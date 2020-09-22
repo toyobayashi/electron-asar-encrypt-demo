@@ -397,6 +397,7 @@ for (let i = 0; i < process.argv.length; i++) {
 
 ## 局限性
 
+* 必须开启 `nodeIntegration` 选项。也不能使用 `preload` 预加载脚本，因为这样原生模块会找不到自身 `module` 实例，也就无法使用 `require`
 * 只能加密 JS，不能加密其它类型的文件，如 JSON、图片资源等
 * 所有不走 `Module.prototype._compile` 的 JS 加载方法都不能加载加密后的 JS，例如依赖 HTML `<script>` 标签的脚本加载方式失效，Webpack 动态导入 `import()` 失效
 * 如果 JS 文件很多，解密造成的性能影响较大，下面会说如何减少需要加密的 JS
