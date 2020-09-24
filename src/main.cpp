@@ -247,18 +247,22 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
   return exports;
 #else
 
-  Napi::Object ipcMain = electron.Get("ipcMain").As<Napi::Object>();
-  Napi::Function once = ipcMain.Get("once").As<Napi::Function>();
+  Napi::Value ELECTRON_RUN_AS_NODE = env.Global().As<Napi::Object>().Get("process").As<Napi::Object>().Get("env").As<Napi::Object>().Get("ELECTRON_RUN_AS_NODE");
 
-  once.Call(ipcMain, { Napi::String::New(env, "__SHOW_ERROR_AND_QUIT__"), Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value {
-    Napi::Env env = info.Env();
-    Napi::Object event = info[0].As<Napi::Object>();
-    Napi::Object mm = env.Global().Get("process").As<Napi::Object>().Get("mainModule").As<Napi::Object>();
-    Napi::Function req = mm.Get("require").As<Napi::Function>();
-    _showErrorAndQuit(env, req.Call(mm, { Napi::String::New(env, "electron") }).As<Napi::Object>(), Napi::String::New(env, errmsg));
-    event.Set("returnValue", env.Null());
-    return env.Undefined();
-  }) });
+  if (ELECTRON_RUN_AS_NODE.IsUndefined() || ELECTRON_RUN_AS_NODE == Napi::Number::New(env, 0) || ELECTRON_RUN_AS_NODE == Napi::String::New(env, "")) {
+    Napi::Object ipcMain = electron.Get("ipcMain").As<Napi::Object>();
+    Napi::Function once = ipcMain.Get("once").As<Napi::Function>();
+
+    once.Call(ipcMain, { Napi::String::New(env, "__SHOW_ERROR_AND_QUIT__"), Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value {
+      Napi::Env env = info.Env();
+      Napi::Object event = info[0].As<Napi::Object>();
+      Napi::Object mm = env.Global().Get("process").As<Napi::Object>().Get("mainModule").As<Napi::Object>();
+      Napi::Function req = mm.Get("require").As<Napi::Function>();
+      _showErrorAndQuit(env, req.Call(mm, { Napi::String::New(env, "electron") }).As<Napi::Object>(), Napi::String::New(env, errmsg));
+      event.Set("returnValue", env.Null());
+      return env.Undefined();
+    }) });
+  }
 
   try {
     require({ Napi::String::New(env, "./main.js") }).As<Napi::Function>().Call({ _getKey(env) });
