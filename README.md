@@ -6,6 +6,16 @@
 
 所以我就在思考如何对 ASAR 包进行加密，防止商业源码被一些有心人士轻易篡改或注入一些恶意的代码后再分发。这里提供了一种不需要重新编译 Electron 即可完成加密的思路。
 
+## 跑起来
+
+``` bash
+git clone https://github.com/toyobayashi/electron-asar-encrypt-demo.git
+cd ./electron-asar-encrypt-demo
+npm install # 复制 electron release 到 test 目录
+npm start # 编译然后启动应用
+npm test # 编译然后跑测试
+```
+
 ## 加密
 
 先生成密钥保存在本地的文件中，方便 JS 打包脚本导入和 C++ include 内联。

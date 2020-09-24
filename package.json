@@ -1,16 +1,18 @@
 {
   "name": "electron-asar-encrypt-demo",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "electron-asar-encrypt-demo",
   "main": "pack.js",
   "scripts": {
+    "keygen": "node ./script/keygen",
     "install": "node ./script/keygen",
     "postinstall": "node ./script/postinstall.js",
     "build": "node ./script/js2c&&node-gyp configure --target=9.2.1 --disturl=https://electronjs.org/headers&&node-gyp build",
     "build:debug": "node ./script/js2c&&node-gyp configure --target=9.2.1 --disturl=https://electronjs.org/headers&&node-gyp build --debug",
-    "test": "npm run build&&node ./script/pack&&node ./script/test",
+    "asar": "node ./script/pack",
+    "test": "npm run keygen&&npm run build&&npm run asar&&node ./script/test",
     "dist": "node ./script/dist.js",
-    "start": "node ./script/start.js"
+    "start": "npm run keygen&&npm run build&&npm run asar&&node ./script/start.js"
   },
   "keywords": [
     "asar"
