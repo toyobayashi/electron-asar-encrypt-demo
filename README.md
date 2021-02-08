@@ -18,7 +18,7 @@ npm test # 编译然后跑测试
 
 ## 加密
 
-先生成密钥保存在本地的文件中，方便 JS 打包脚本导入和 C++ include 内联。
+以 AES-256-CBC 为例，先生成密钥保存在本地的文件中，方便 JS 打包脚本导入和 C++ include 内联。
 
 ``` js
 // 这个脚本不会被打包进客户端，本地开发用
@@ -219,9 +219,9 @@ static Napi::Value _runScript(Napi::Env& env, const char* script) {
 `node-addon-api` v3 以上可以直接使用：
 
 ``` cpp
-Napi::Value Napi::Env::RunScript(const char* utf8script)
-Napi::Value Napi::Env::RunScript(const std::string& utf8script)
-Napi::Value Napi::Env::RunScript(Napi::String script)
+Napi::Value Napi::Env::RunScript(const char* utf8script);
+Napi::Value Napi::Env::RunScript(const std::string& utf8script);
+Napi::Value Napi::Env::RunScript(Napi::String script);
 ```
 
 然后就可以愉快地 JS in C++ 了。
@@ -391,7 +391,7 @@ require('./main.node')
 
 ``` js
 for (let i = 0; i < process.argv.length; i++) {
-  if (process.argv[i].indexOf('--inspect') !== -1 || process.argv[i].indexOf('--remote-debugging-port') !== -1) {
+  if (process.argv[i].startsWith('--inspect') || process.argv[i].startsWith('--remote-debugging-port')) {
     throw new Error('Not allow debugging this program.')
   }
 }
@@ -474,6 +474,7 @@ new BrowserWindow({
   // ...
   webPreferences: {
     nodeIntegration: true, // 渲染进程要使用 require
+    contextIsolation: false, // Electron 12 开始默认值为 true，要关掉
     devTools: false // 关掉开发者工具，因为开发者工具可以看到渲染进程的代码
   }
 })

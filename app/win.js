@@ -108,6 +108,8 @@ WindowManager.createMainWindow = function () {
       show: false,
       webPreferences: {
         nodeIntegration: true,
+        enableRemoteModule: false,
+        contextIsolation: false,
         devTools: false
       }
     }

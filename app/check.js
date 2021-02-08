@@ -1,6 +1,6 @@
 for (let i = 0; i < process.argv.length; i++) {
   const arg = process.argv[i]
-  if (arg && arg.indexOf('--inspect') !== -1 || arg.indexOf('--remote-debugging-port') !== -1) {
+  if (arg.startsWith('--inspect') || arg.startsWith('--remote-debugging-port')) {
     throw new Error('Not allow debugging this program.')
   }
 }
