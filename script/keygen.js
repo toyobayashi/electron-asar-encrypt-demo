@@ -13,5 +13,5 @@ if (!fs.existsSync(target)) {
 }
 
 function writeKey () {
-  fs.writeFileSync(target, Array.prototype.map.call(crypto.randomBytes(32), (v => ('0x' + ('0' + v.toString(16)).slice(-2)))))
+  fs.writeFileSync(target, Array.prototype.map.call(crypto.randomBytes(32), (v => ('0x' + ('0' + v.toString(16)).slice(-2)))).toString())
 }
