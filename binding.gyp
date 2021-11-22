@@ -1,7 +1,6 @@
 {
   "variables": {
-    "module_path": "./app",
-    "PRODUCT_DIR": "./build/Release"
+    "module_path": "./app"
   },
   'target_defaults': {
     'defines': [

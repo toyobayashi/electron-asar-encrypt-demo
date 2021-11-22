@@ -1,6 +1,7 @@
 const { createElement: e } = require('./element.js')
 
 module.exports = e('div', null, [
+  e('p', null, `Electron: ${process.versions.electron}, Node.js: ${process.versions.node}`),
   e('p', null, 'Please enter the key. You can enter string or numbers.'),
   e('p', null, 'For example:'),
   e('p', null, 'secretkey'),

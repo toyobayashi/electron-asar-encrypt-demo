@@ -198,21 +198,21 @@ function (exports, require, module, __filename, __dirname) {
 
 ``` cpp
 #include <string>
-#include <napi.h>
+#include "napi.h"
 
 // 先封装一下脚本运行方法
-static Napi::Value _runScript(Napi::Env& env, const Napi::String& script) {
+Napi::Value RunScript(Napi::Env& env, const Napi::String& script) {
   napi_value res;
   NAPI_THROW_IF_FAILED(env, napi_run_script(env, script, &res), env.Undefined());
   return Napi::Value(env, res); // env.RunScript(script);
 }
 
-static Napi::Value _runScript(Napi::Env& env, const std::string& script) {
-  return _runScript(env, Napi::String::New(env, script)); // env.RunScript(script);
+Napi::Value RunScript(Napi::Env& env, const std::string& script) {
+  return RunScript(env, Napi::String::New(env, script)); // env.RunScript(script);
 }
 
-static Napi::Value _runScript(Napi::Env& env, const char* script) {
-  return _runScript(env, Napi::String::New(env, script)); // env.RunScript(script);
+Napi::Value RunScript(Napi::Env& env, const char* script) {
+  return RunScript(env, Napi::String::New(env, script)); // env.RunScript(script);
 }
 ```
 
@@ -227,8 +227,8 @@ Napi::Value Napi::Env::RunScript(Napi::String script);
 然后就可以愉快地 JS in C++ 了。
 
 ``` cpp
-static Napi::Value _getModuleObject(const Napi::Env& env, const Napi::Object& exports) {
-  std::string findModuleScript = "(function (exports) {\n"
+Napi::Value GetModuleObject(const Napi::Env& env, const Napi::Object& exports) {
+  std::string script = "(function (exports) {\n"
     "function findModule(start, target) {\n"
     "  if (start.exports === target) {\n"
     "    return start;\n"
@@ -243,14 +243,14 @@ static Napi::Value _getModuleObject(const Napi::Env& env, const Napi::Object& ex
     "}\n"
     "return findModule(process.mainModule, exports);\n"
     "});";
-  Napi::Function _findFunction = _runScript(env, findModuleScript).As<Napi::Function>();
-  Napi::Value res = _findFunction({ exports });
+  Napi::Function find_function = RunScript(env, script).As<Napi::Function>();
+  Napi::Value res = find_function({ exports });
   if (res.IsNull()) {
     Napi::Error::New(env, "Cannot find module object.").ThrowAsJavaScriptException();
   }
   return res;
 }
-static Napi::Function _makeRequireFunction(const Napi::Env& env, const Napi::Object& module) {
+Napi::Function MakeRequireFunction(const Napi::Env& env, const Napi::Object& mod) {
   std::string script = "(function makeRequireFunction(mod) {\n"
       "const Module = mod.constructor;\n"
 
@@ -283,66 +283,61 @@ static Napi::Function _makeRequireFunction(const Napi::Env& env, const Napi::Obj
       "return require;\n"
     "});";
 
-  Napi::Function _makeRequire = _runScript(env, script).As<Napi::Function>();
-  return _makeRequire({ module }).As<Napi::Function>();
+  Napi::Function make_require = RunScript(env, script).As<Napi::Function>();
+  return make_require({ mod }).As<Napi::Function>();
 }
 ```
 
 ``` cpp
 #include <unordered_map>
 
-typedef struct AddonData {
+struct AddonData {
   // 存 Node 模块引用
   std::unordered_map<std::string, Napi::ObjectReference> modules;
   // 存函数引用
   std::unordered_map<std::string, Napi::FunctionReference> functions;
-} AddonData;
+};
 
-static void _deleteAddonData(napi_env env, void* data, void* hint) {
-  // 释放堆内存
-  delete static_cast<AddonData*>(data);
-}
-
-static Napi::Value modulePrototypeCompile(const Napi::CallbackInfo& info) {
-  AddonData* addonData = static_cast<AddonData*>(info.Data());
-  Napi::Function oldCompile = addonData->functions["Module.prototype._compile"].Value();
+Napi::Value ModulePrototypeCompile(const Napi::CallbackInfo& info) {
+  AddonData* addon_data = static_cast<AddonData*>(info.Data());
+  Napi::Function old_compile = addon_data->functions["Module.prototype._compile"].Value();
   // 这里推荐使用 C/C++ 的库来做解密
   // ...
 }
 
-static Napi::Object _init(Napi::Env env, Napi::Object exports) {
-  Napi::Object module = _getModuleObject(env, exports).As<Napi::Object>();
-  Napi::Function require = _makeRequireFunction(env, module);
+Napi::Object Init(Napi::Env env, Napi::Object exports) {
+  Napi::Object this_module = GetModuleObject(env, exports).As<Napi::Object>();
+  Napi::Function require = MakeRequireFunction(env, this_module);
   // const mainModule = process.mainModule
-  Napi::Object mainModule = env.Global().As<Napi::Object>().Get("process").As<Napi::Object>().Get("mainModule").As<Napi::Object>();
+  Napi::Object main_module = env.Global().As<Napi::Object>().Get("process").As<Napi::Object>().Get("mainModule").As<Napi::Object>();
   // const electron = require('electron')
   Napi::Object electron = require({ Napi::String::New(env, "electron") }).As<Napi::Object>();
   // require('module')
-  Napi::Object Module = require({ Napi::String::New(env, "module") }).As<Napi::Object>();
+  Napi::Object module_constructor = require({ Napi::String::New(env, "module") }).As<Napi::Object>();
   // module.parent
-  Napi::Value moduleParent = module.Get("parent");
+  Napi::Value module_parent = this_module.Get("parent");
 
-  if (module != mainModule || (moduleParent != Module && moduleParent != env.Undefined() && moduleParent != env.Null())) {
+  if (this_module != main_module || (module_parent != module_constructor && module_parent != env.Undefined() && module_parent != env.Null())) {
     // 入口模块不是当前的原生模块，可能会被拦截 API 导致泄露密钥
     // 弹窗警告后退出
   }
 
-  AddonData* addonData = new AddonData;
-  // 把 addonData 和 exports 对象关联
-  // exports 被垃圾回收时释放 addonData 指向的内存
-  NAPI_THROW_IF_FAILED(env,
-    napi_wrap(env, exports, addonData, _deleteAddonData, nullptr, nullptr),
-    exports);
+  AddonData* addon_data = env.GetInstanceData<AddonData>();
+
+  if (addon_data == nullptr) {
+    addon_data = new AddonData();
+    env.SetInstanceData(addon_data);
+  }
 
   // require('crypto')
-  // addonData->modules["crypto"] = Napi::Persistent(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
+  // addon_data->modules["crypto"] = Napi::Persistent(require({ Napi::String::New(env, "crypto") }).As<Napi::Object>());
 
-  Napi::Object ModulePrototype = Module.Get("prototype").As<Napi::Object>();
-  addonData->functions["Module.prototype._compile"] = Napi::Persistent(ModulePrototype.Get("_compile").As<Napi::Function>());
-  ModulePrototype["_compile"] = Napi::Function::New(env, modulePrototypeCompile, "_compile", addonData);
+  Napi::Object module_prototype = module_constructor.Get("prototype").As<Napi::Object>();
+  addon_data->functions["Module.prototype._compile"] = Napi::Persistent(module_prototype.Get("_compile").As<Napi::Function>());
+  module_prototype["_compile"] = Napi::Function::New(env, ModulePrototypeCompile, "_compile", addon_data);
 
   try {
-    require({ Napi::String::New(env, "./main.js") }).Call({ _getKey() });
+    require({ Napi::String::New(env, "./main.js") }).Call({ getKey() });
   } catch (const Napi::Error& e) {
     // 弹窗后退出
     // ...
@@ -351,10 +346,10 @@ static Napi::Object _init(Napi::Env env, Napi::Object exports) {
 }
 
 // 不要分号，NODE_API_MODULE 是个宏
-NODE_API_MODULE(NODE_GYP_MODULE_NAME, _init)
+NODE_API_MODULE(NODE_GYP_MODULE_NAME, Init)
 ```
 
-看到这里可能会问了搞了大半天为什么还要用 C++ 来写 JS 啊，不是明明可以 `_runScript()` 吗？ 前面也已经提到过，直接 runScript 需要把 JS 写死成字符串，在编译后的二进制文件中是原样存在的，密钥会被泄露，用 C++ 来写这些逻辑可以增加反向的难度。
+看到这里可能会问了搞了大半天为什么还要用 C++ 来写 JS 啊，不是明明可以 `RunScript()` 吗？ 前面也已经提到过，直接 runScript 需要把 JS 写死成字符串，在编译后的二进制文件中是原样存在的，密钥会被泄露，用 C++ 来写这些逻辑可以增加反向的难度。
 
 总结下就是这样的：
 

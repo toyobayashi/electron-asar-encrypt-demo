@@ -1,22 +1,67 @@
 {
-    "configurations": [
-        {
-            "name": "Win32",
-            "includePath": [
-                "${workspaceFolder}/node_modules/node-addon-api",
-                "${env:HOME}/AppData/Local/node-gyp/Cache/11.2.1/include/node"
-            ],
-            "defines": [
-                "_DEBUG",
-                "UNICODE",
-                "_UNICODE"
-            ],
-            "windowsSdkVersion": "10.0.17763.0",
-            "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Tools/MSVC/14.23.28105/bin/Hostx64/x64/cl.exe",
-            "cStandard": "c11",
-            "cppStandard": "c++17",
-            "intelliSenseMode": "msvc-x64"
-        }
+  "env": {
+    "includePath": [
+      "${default}",
+      "${workspaceFolder}/node_modules/node-addon-api",
+      "${env:HOME}/AppData/Local/node-gyp/Cache/16.0.1/include/node"
     ],
-    "version": 4
+    "defines": []
+  },
+  "configurations": [
+    {
+      "name": "Win32",
+      "defines": ["${defines}", "_DEBUG", "UNICODE", "_UNICODE", "_CRT_SECURE_NO_WARNINGS"],
+      "compilerPath": "${env:VCToolsInstallDir}\\bin\\Host${env:VSCMD_ARG_HOST_ARCH}\\${env:VSCMD_ARG_TGT_ARCH}\\cl.exe",
+      "windowsSdkVersion": "10.0.19041.0",
+      "intelliSenseMode": "windows-msvc-x64",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "includePath": ["${includePath}"]
+    },
+    {
+      "name": "Linux",
+      "defines": ["${defines}"],
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-gcc-x64",
+      "browse": {
+        "path": [
+          "${workspaceFolder}"
+        ],
+        "limitSymbolsToIncludedHeaders": true,
+        "databaseFilename": ""
+      },
+      "includePath": ["${includePath}"]
+    },
+    {
+      "name": "macOS",
+      "includePath": ["${includePath}"],
+      "defines": ["${defines}"],
+      "macFrameworkPath": ["/System/Library/Frameworks", "/Library/Frameworks"],
+      "compilerPath": "/usr/bin/clang",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "macos-clang-x64"
+    },
+    {
+      "name": "Emscripten",
+      "defines": ["${defines}"],
+      "compilerPath": "${env:EMSDK}/upstream/emscripten/emcc",
+      "intelliSenseMode": "clang-x86",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "includePath": ["${includePath}"]
+    },
+    {
+      "name": "Emscripten (Win32)",
+      "defines": ["${defines}"],
+      "compilerPath": "${env:EMSDK}/upstream/emscripten/emcc.bat",
+      "intelliSenseMode": "clang-x86",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "includePath": ["${includePath}"]
+    }
+  ],
+  "version": 4
 }

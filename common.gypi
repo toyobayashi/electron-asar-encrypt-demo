@@ -1,11 +1,8 @@
 {
-  'cflags!': [ '-fno-exceptions' ],
-  'cflags_cc!': [ '-fno-exceptions' ],
+  'cflags!': ['-fno-exceptions'],
+  'cflags_cc!': ['-fno-exceptions'],
   'include_dirs': [
     "<!(node -p \"require('node-addon-api').include_dir\")"
-  ],
-  'dependencies': [
-    "<!(node -p \"require('node-addon-api').gyp\")"
   ],
   'conditions': [
     ['OS=="mac"', {
@@ -19,9 +16,13 @@
     }],
     ['OS=="win"', { 
       'msvs_settings': {
-        'VCCLCompilerTool': { 'ExceptionHandling': 1, 'AdditionalOptions': ['/source-charset:utf-8'] },
+        'VCCLCompilerTool': {
+          'ExceptionHandling': 1,
+          'AdditionalOptions': ['/source-charset:utf-8']
+        },
       },
       'defines':[
+        '_HAS_EXCEPTIONS=1',
         'NOMINMAX'
       ]
     }]
