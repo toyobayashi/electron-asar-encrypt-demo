@@ -13,6 +13,7 @@
       'target_name': 'main',
       'sources': [
         'src/main.cpp',
+        'src/base64.c',
         'src/aes/aes.c'
       ],
       'includes': [
@@ -23,6 +24,7 @@
       'target_name': 'renderer',
       'sources': [
         'src/main.cpp',
+        'src/base64.c',
         'src/aes/aes.c'
       ],
       'includes': [

@@ -61,6 +61,7 @@ try {
 #include <unordered_map>
 #include "napi.h"
 #include "script.h"
+#include "base64.h"
 
 #include "aes/aes.hpp"
 
@@ -77,12 +78,12 @@ struct AddonData {
 
 const char errmsg[] = "This program has been changed by others.";
 
-void ConsoleLog(const Napi::Env& env, Napi::Value value) {
+/* void ConsoleLog(const Napi::Env& env, Napi::Value value) {
   Napi::Object console = env.Global().As<Napi::Object>()
     .Get("console").As<Napi::Object>();
   Napi::Function log = console.Get("log").As<Napi::Function>();
   log.Call(console, { value });
-}
+} */
 
 void ConsoleError(const Napi::Env& env, Napi::Value value) {
   Napi::Object console = env.Global().As<Napi::Object>()
@@ -91,18 +92,18 @@ void ConsoleError(const Napi::Env& env, Napi::Value value) {
   error.Call(console, { value });
 }
 
-std::vector<uint8_t> GetKeyVector() {
-  const uint8_t key[KEY_LENGTH] = {
+const uint8_t* GetKey() {
+  static const uint8_t key[KEY_LENGTH] = {
 #include "key.txt"
   };
 
-  return std::vector<uint8_t>(key, key + KEY_LENGTH);
+  return key;
 }
 
-Napi::Array GetKey(const Napi::Env& env) {
-  std::vector<uint8_t> key = GetKeyVector();
-  Napi::Array arrkey = Napi::Array::New(env, key.size());
-  for (uint32_t i = 0; i < key.size(); i++) {
+Napi::Array GetKeyArray(const Napi::Env& env) {
+  const uint8_t* key = GetKey();
+  Napi::Array arrkey = Napi::Array::New(env, KEY_LENGTH);
+  for (uint32_t i = 0; i < KEY_LENGTH; i++) {
     arrkey.Set(i, key[i]);
   }
   return arrkey;
@@ -123,14 +124,14 @@ int Pkcs7cut(uint8_t *p, int plen) {
 }
 
 std::string Aesdec(const std::vector<uint8_t>& data,
-                   const std::vector<uint8_t>& key,
-                   const std::vector<uint8_t>& iv) {
+                   const uint8_t* key,
+                   const uint8_t* iv) {
   size_t l = data.size();
   uint8_t* encrypt = new uint8_t[l];
   memcpy(encrypt, data.data(), l);
 
   struct AES_ctx ctx;
-  AES_init_ctx_iv(&ctx, key.data(), iv.data());
+  AES_init_ctx_iv(&ctx, key, iv);
   AES_CBC_decrypt_buffer(&ctx, encrypt, l);
 
   uint8_t* out = new uint8_t[l + 1];
@@ -146,46 +147,30 @@ std::string Aesdec(const std::vector<uint8_t>& data,
   return res;
 }
 
-std::vector<uint8_t> BufferToVector(const Napi::Buffer<uint8_t>& buf) {
-  uint8_t* data = buf.Data();
-  return std::vector<uint8_t>(data, data + buf.ByteLength());
-}
+std::string Decrypt(const std::string& base64) {
+  size_t buflen = base64_decode(base64.c_str(), base64.length(), nullptr);
+  if (buflen == 0) return "";
+  std::vector<uint8_t> buf(buflen);
+  base64_decode(base64.c_str(), base64.length(), &buf[0]);
 
-Napi::String Base64toCode(const Napi::Env& env,
-                          const Napi::String& base64) {
-  Napi::Object buffer_constructor = env.Global().Get("Buffer")
-    .As<Napi::Object>();
-  Napi::Buffer<uint8_t> body = buffer_constructor.Get("from")
-    .As<Napi::Function>()
-    .Call(buffer_constructor, { base64, Napi::String::New(env, "base64") })
-    .As<Napi::Buffer<uint8_t>>();
+  std::vector<uint8_t> iv(buf.begin(), buf.begin() + 16);
+  std::vector<uint8_t> data(buf.begin() + 16, buf.end());
 
-  Napi::Buffer<uint8_t> iv = body.Get("slice").As<Napi::Function>()
-    .Call(body, { Napi::Number::New(env, 0), Napi::Number::New(env, 16) })
-    .As<Napi::Buffer<uint8_t>>();
-  Napi::Buffer<uint8_t> data = body.Get("slice").As<Napi::Function>()
-    .Call(body, { Napi::Number::New(env, 16) })
-    .As<Napi::Buffer<uint8_t>>();
-
-  std::string plain_content = Aesdec(BufferToVector(data),
-    GetKeyVector(), BufferToVector(iv));
-
-  return Napi::String::New(env, plain_content);
+  return Aesdec(data, GetKey(), iv.data());
 }
 
 Napi::Value ModulePrototypeCompile(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   AddonData* addon_data = static_cast<AddonData*>(info.Data());
-  Napi::Object content = info[0].As<Napi::Object>();
-  Napi::Object filename = info[1].As<Napi::Object>();
+  Napi::String content = info[0].As<Napi::String>();
+  Napi::String filename = info[1].As<Napi::String>();
+  std::string filename_str = filename.Utf8Value();
   Napi::Function old_compile =
     addon_data->functions[FN_MODULE_PROTOTYPE__COMPILE].Value();
 
-  if (-1 != filename.Get("indexOf").As<Napi::Function>()
-              .Call(filename, { Napi::String::New(env, "app.asar") })
-              .As<Napi::Number>().Int32Value()) {
+  if (filename_str.find("app.asar") != std::string::npos) {
     return old_compile.Call(info.This(),
-      { Base64toCode(env, content.As<Napi::String>()), filename });
+      { Napi::String::New(env, Decrypt(content.Utf8Value())), filename });
   }
   return old_compile.Call(info.This(), { content, filename });
 }
@@ -337,7 +322,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
   try {
     require({ Napi::String::New(env, "./main.js") })
-      .As<Napi::Function>().Call({ GetKey(env) });
+      .As<Napi::Function>().Call({ GetKeyArray(env) });
   } catch (const Napi::Error& e) {
     ShowErrorAndQuit(env, electron, e.Get("stack").As<Napi::String>());
   }
