@@ -1,6 +1,6 @@
 {
   "name": "electron-asar-encrypt-demo",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "electron-asar-encrypt-demo",
   "main": "pack.js",
   "scripts": {
