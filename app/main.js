@@ -1,4 +1,3 @@
-require('./check.js')
 require('./asar.js')
 const str = require('outerpkg')
 const WindowManager = require('./win.js')

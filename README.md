@@ -116,6 +116,16 @@ asar.createPackageWithOptions(
 // 用 C++ 写以下逻辑，可以使密钥被编译进动态库
 // 只有反编译动态库才有可能分析出来
 
+// 禁止调试
+for (let i = 0; i < process.argv.length; i++) {
+  if (process.argv[i].startsWith('--inspect') ||
+      process.argv[i].startsWith('--remote-debugging-port')) {
+    throw new Error('Not allow debugging this program.')
+  }
+}
+
+const { app, dialog } = require('electron')
+
 const moduleParent = module.parent;
 if (module !== process.mainModule || (moduleParent !== Module && moduleParent !== undefined && moduleParent !== null)) {
   // 如果该原生模块不是入口，就报错退出
@@ -123,8 +133,6 @@ if (module !== process.mainModule || (moduleParent !== Module && moduleParent !=
   app.quit()
 }
 
-const { app, dialog } = require('electron')
-const crypto = require('crypto')
 const Module = require('module')
 
 function getKey () {
@@ -144,7 +152,7 @@ function decrypt (body) { // body 是 Buffer
   // const clearEncoding = 'utf8' // 输出是字符串
   // const cipherEncoding = 'binary' // 输入是二进制
   // const chunks = [] // 保存分段的字符串
-  // const decipher = crypto.createDecipheriv(
+  // const decipher = require('crypto').createDecipheriv(
   //   'aes-256-cbc',
   //   getKey(),
   //   iv
@@ -227,8 +235,8 @@ Napi::Value Napi::Env::RunScript(Napi::String script);
 然后就可以愉快地 JS in C++ 了。
 
 ``` cpp
-Napi::Value GetModuleObject(const Napi::Env& env, const Napi::Object& exports) {
-  std::string script = "(function (exports) {\n"
+Napi::Value GetModuleObject(Napi::Env& env, const Napi::Object& main_module, const Napi::Object& exports) {
+  std::string script = "(function (mainModule, exports) {\n"
     "function findModule(start, target) {\n"
     "  if (start.exports === target) {\n"
     "    return start;\n"
@@ -241,16 +249,16 @@ Napi::Value GetModuleObject(const Napi::Env& env, const Napi::Object& exports) {
     "  }\n"
     "  return null;\n"
     "}\n"
-    "return findModule(process.mainModule, exports);\n"
+    "return findModule(mainModule, exports);\n"
     "});";
   Napi::Function find_function = RunScript(env, script).As<Napi::Function>();
-  Napi::Value res = find_function({ exports });
+  Napi::Value res = find_function({ main_module, exports });
   if (res.IsNull()) {
     Napi::Error::New(env, "Cannot find module object.").ThrowAsJavaScriptException();
   }
   return res;
 }
-Napi::Function MakeRequireFunction(const Napi::Env& env, const Napi::Object& mod) {
+Napi::Function MakeRequireFunction(Napi::Env& env, const Napi::Object& mod) {
   std::string script = "(function makeRequireFunction(mod) {\n"
       "const Module = mod.constructor;\n"
 
@@ -293,7 +301,7 @@ Napi::Function MakeRequireFunction(const Napi::Env& env, const Napi::Object& mod
 
 struct AddonData {
   // 存 Node 模块引用
-  std::unordered_map<std::string, Napi::ObjectReference> modules;
+  // std::unordered_map<std::string, Napi::ObjectReference> modules;
   // 存函数引用
   std::unordered_map<std::string, Napi::FunctionReference> functions;
 };
@@ -306,7 +314,27 @@ Napi::Value ModulePrototypeCompile(const Napi::CallbackInfo& info) {
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
-  Napi::Object this_module = GetModuleObject(env, exports).As<Napi::Object>();
+#ifdef _TARGET_ELECTRON_RENDERER_
+  // const mainModule = window.module
+  Napi::Object main_module = env.Global().Get("module").As<Napi::Object>();
+#else
+  
+  Napi::Object process = env.Global().Get("process").As<Napi::Object>();
+  Napi::Array argv = process.Get("argv").As<Napi::Array>();
+  for (uint32_t i = 0; i < argv.Length(); ++i) {
+    std::string arg = argv.Get(i).As<Napi::String>().Utf8Value();
+    if (arg.find("--inspect") == 0 ||
+        arg.find("--remote-debugging-port") == 0) {
+      Napi::Error::New(env, "Not allow debugging this program.")
+        .ThrowAsJavaScriptException();
+      return exports;
+    }
+  }
+  // const mainModule = process.mainModule
+  Napi::Object main_module = process.Get("mainModule").As<Napi::Object>();
+#endif
+
+  Napi::Object this_module = GetModuleObject(&env, main_module, exports).As<Napi::Object>();
   Napi::Function require = MakeRequireFunction(env, this_module);
   // const mainModule = process.mainModule
   Napi::Object main_module = env.Global().As<Napi::Object>().Get("process").As<Napi::Object>().Get("mainModule").As<Napi::Object>();
@@ -317,7 +345,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   // module.parent
   Napi::Value module_parent = this_module.Get("parent");
 
-  if (this_module != main_module || (module_parent != module_constructor && module_parent != env.Undefined() && module_parent != env.Null())) {
+  if (this_module != main_module ||
+      (module_parent != module_constructor && module_parent != env.Undefined() && module_parent != env.Null())) {
     // 入口模块不是当前的原生模块，可能会被拦截 API 导致泄露密钥
     // 弹窗警告后退出
   }
@@ -381,18 +410,6 @@ process.argv.length = 1
 require('./main.node')
 // 或 Module._load('./main.node', module, true)
 ```
-
-另外在主进程 JS 中要禁用 Node.js 调试，否则代码是可以在 Chrome 开发者工具中看到的。
-
-``` js
-for (let i = 0; i < process.argv.length; i++) {
-  if (process.argv[i].startsWith('--inspect') || process.argv[i].startsWith('--remote-debugging-port')) {
-    throw new Error('Not allow debugging this program.')
-  }
-}
-```
-
-但这种方法防不住在 main.node 之前加载的脚本中设置 `process.argv.length = 1`，所以关键还是要防止入口文件被改成其它 JS 脚本。
 
 ## 渲染进程解密
 

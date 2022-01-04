@@ -1,11 +1,19 @@
 /*
+for (let i = 0; i < process.argv.length; i++) {
+  if (process.argv[i].startsWith('--inspect') ||
+      process.argv[i].startsWith('--remote-debugging-port')) {
+    throw new Error('Not allow debugging this program.')
+  }
+}
+
+const { app, dialog } = require('electron')
+
 const moduleParent = module.parent;
 if (module !== process.mainModule || (moduleParent !== Module && moduleParent !== undefined && moduleParent !== null)) {
   dialog.showErrorBox('Error', 'This program has been changed by others.')
   app.quit()
 }
 
-const { app, dialog } = require('electron')
 const Module = require('module')
 
 function getKey () {
@@ -63,7 +71,7 @@ try {
 namespace {
 
 struct AddonData {
-  std::unordered_map<int, Napi::ObjectReference> modules;
+  // std::unordered_map<int, Napi::ObjectReference> modules;
   std::unordered_map<int, Napi::FunctionReference> functions;
 };
 
@@ -230,8 +238,18 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 #ifdef _TARGET_ELECTRON_RENDERER_
   Napi::Object main_module = env.Global().Get("module").As<Napi::Object>();
 #else
-  Napi::Object main_module = env.Global().Get("process").As<Napi::Object>()
-    .Get("mainModule").As<Napi::Object>();
+  Napi::Object process = env.Global().Get("process").As<Napi::Object>();
+  Napi::Array argv = process.Get("argv").As<Napi::Array>();
+  for (uint32_t i = 0; i < argv.Length(); ++i) {
+    std::string arg = argv.Get(i).As<Napi::String>().Utf8Value();
+    if (arg.find("--inspect") == 0 ||
+        arg.find("--remote-debugging-port") == 0) {
+      Napi::Error::New(env, "Not allow debugging this program.")
+        .ThrowAsJavaScriptException();
+      return exports;
+    }
+  }
+  Napi::Object main_module = process.Get("mainModule").As<Napi::Object>();
 #endif
 
   Napi::Object this_module = GetModuleObject(&env, main_module, exports)
