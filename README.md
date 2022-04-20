@@ -1,5 +1,12 @@
 # 给 Electron 应用加密源码
 
+## Translations
+
+Great thanks to those who translated this README to other languages.
+
+* English - [sleeyax/electron-asar-encrypt-demo](https://github.com/sleeyax/electron-asar-encrypt-demo)
+* Portuguese - [maxwellcc/electron-asar-encrypt-demo](https://github.com/maxwellcc/electron-asar-encrypt-demo)
+
 ## 为什么会有这个仓库？
 
 众所周知，[Electron](https://electronjs.org) 官方没有提供保护源码的方法。打包一个 Electron 应用，说白了就是[把源码拷到固定的一个地方](http://electronjs.org/docs/tutorial/application-distribution)，比如在 Windows / Linux 下是 `resources/app` 这个目录。运行 Electron 应用时，Electron 就把这个目录当作一个 Node.js 项目去跑里面的 JS 代码。虽然 Electron 认识 ASAR 格式的代码包，即可以把所有的源码打包成一个 `app.asar` 文件放到 `resources` 目录，Electron 把 `app.asar` 当成一个文件夹，跑里面的代码，但是 ASAR 包中的文件是没有加密的，仅仅是把所有的文件拼接成了一个文件再加上了文件头信息，使用官方提供的 `asar` 库很容易把所有的源码从 ASAR 包提取出来，所以起不到加密的效果，只是对于初心者来说想接触到源码多了一点小门槛，稍微懂行一点的完全无压力。
