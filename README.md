@@ -1,5 +1,7 @@
 # 给 Electron 应用加密源码
 
+The solution described in this demo repositry has been integrated into [asarmor](https://github.com/sleeyax/asarmor), if you would like to encrypt your electron project JavaScript source code like this demo, give it a try!
+
 ## Translations
 
 Great thanks to those who translated this README to other languages.
